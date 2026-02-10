@@ -1,0 +1,19 @@
+# Telegram 客户端库
+telethon==1.34.0
+
+# 配置文件解析
+pyyaml==6.0.1
+
+# 日志增强
+colorlog==6.8.0
+
+# 异步支持
+asyncio
+
+# Web 框架
+flask==3.0.0
+flask-cors==4.0.0
+pyjwt==2.8.0
+
+# 数据库（可选，用于历史记录）
+# sqlite3 (Python 内置)

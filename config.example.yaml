@@ -1,0 +1,86 @@
+# Telegram 监控配置示例
+# 复制此文件为 config.yaml 并填写你的配置
+
+# 账号B - 监控账号（需要登录）
+monitor_account:
+  phone: "+86138xxxxxxxx"  # 手机号（必须以+开头，如：+8613812345678）
+  api_id: "YOUR_API_ID"     # 从 https://my.telegram.org 获取
+  api_hash: "YOUR_API_HASH" # 从 https://my.telegram.org 获取
+  session_file: "sessions/monitor.session"
+
+# 注意：Telegram 只支持手机号登录，不支持邮箱登录
+
+# 账号A - 通知接收账号（无需登录）
+notify_target:
+  username: "@your_username"  # 账号A的用户名（以@开头）
+  # 或者使用 user_id（二选一）
+  # user_id: 123456789
+
+# 监控群组列表
+# 使用 get_group_id.py 脚本获取群组ID
+monitor_groups:
+  - group_id: -1001234567890  # 群组ID（负数）
+    group_name: "红包福利群"
+    enabled: true
+
+  # 可以添加更多群组
+  # - group_id: -1009876543210
+  #   group_name: "优惠活动群"
+  #   enabled: true
+
+# 关键词配置
+keywords:
+  # 精确匹配（完全相同才匹配）
+  exact:
+    - "红包"
+
+  # 模糊匹配（包含即可）
+  contains:
+    - "抢红包"
+    - "发红包"
+    - "领红包"
+    - "口令红包"
+
+  # 正则表达式匹配（高级用法）
+  regex:
+    - "红包\\d+元"      # 匹配 "红包100元"
+    - "\\d+元红包"      # 匹配 "100元红包"
+    - "发\\d+个红包"    # 匹配 "发10个红包"
+
+# 通知消息格式
+notification:
+  # 消息格式模板
+  # 可用变量: {group_name}, {keyword}, {time}, {message}, {link}
+  format: |
+    🔔 关键词提醒
+    📍 群组：{group_name}
+    🏷️ 关键词：{keyword}
+    ⏰ 时间：{time}
+    📝 消息：{message}
+    🔗 链接：{link}
+
+  # 是否包含消息链接
+  include_link: true
+
+  # 是否转发原始消息（除了发送格式化消息外，还转发原消息）
+  forward_original: false
+
+# 日志配置
+logging:
+  level: "INFO"  # 日志级别: DEBUG, INFO, WARNING, ERROR
+  file: "logs/monitor.log"
+  max_size: 10485760  # 单个日志文件最大大小（字节），10MB
+  backup_count: 5     # 保留的日志文件数量
+
+# 系统配置
+system:
+  # 自动重连
+  auto_reconnect: true
+  reconnect_delay: 30  # 重连延迟（秒）
+
+  # 心跳保活间隔（秒）- 保持客户端在线，确保即使手机不在线也能收到消息
+  keep_alive_interval: 60
+
+  # 发送失败重试
+  retry_count: 3      # 重试次数
+  retry_delay: 5      # 重试延迟（秒）

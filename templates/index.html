@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram 监控系统 - 管理后台</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 24px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+
+        .btn-primary {
+            background: white;
+            color: #667eea;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .card-title {
+            font-size: 16px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .card-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .card-icon {
+            font-size: 40px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-online {
+            background: #4caf50;
+        }
+
+        .status-offline {
+            background: #f44336;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: #666;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .form-group textarea {
+            min-height: 100px;
+            font-family: monospace;
+        }
+
+        .btn-save {
+            background: #667eea;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-save:hover {
+            background: #5568d3;
+        }
+
+        .list-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .list-item-content {
+            flex: 1;
+        }
+
+        .list-item-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn-small {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        .btn-danger {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-success {
+            background: #4caf50;
+            color: white;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .chart-box {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+        }
+
+        .chart-box h4 {
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .chart-box canvas {
+            max-height: 280px;
+        }
+
+        .stats-summary {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-item .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-item .stat-label {
+            font-size: 13px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .stats-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .stats-controls select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .history-table th,
+        .history-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .history-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .history-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .keyword-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #667eea;
+            color: white;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .pagination button {
+            padding: 6px 14px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .pagination button:hover {
+            background: #f0f0f0;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            .stats-summary {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <h1>📊 Telegram 监控系统</h1>
+            <div class="header-actions">
+                <button class="btn btn-primary" onclick="refreshStatus()">🔄 刷新</button>
+                <button class="btn btn-primary" onclick="window.location.href='/logout'">🚪 退出</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 仪表板 -->
+        <div class="dashboard">
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">监控状态</div>
+                        <div class="card-value">
+                            <span class="status-indicator status-online" id="statusIndicator"></span>
+                            <span id="statusText">运行中</span>
+                        </div>
+                    </div>
+                    <div class="card-icon">🟢</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">监控群组</div>
+                        <div class="card-value" id="groupsCount">0</div>
+                    </div>
+                    <div class="card-icon">👥</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">关键词数量</div>
+                        <div class="card-value" id="keywordsCount">0</div>
+                    </div>
+                    <div class="card-icon">🔑</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <div class="card-title">最后更新</div>
+                        <div class="card-value" style="font-size: 16px;" id="lastUpdate">--</div>
+                    </div>
+                    <div class="card-icon">⏰</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="message" id="message"></div>
+
+        <!-- 标签页 -->
+        <div class="card">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('keywords')">关键词管理</button>
+                <button class="tab" onclick="switchTab('groups')">群组管理</button>
+                <button class="tab" onclick="switchTab('statistics')">数据统计</button>
+                <button class="tab" onclick="switchTab('config')">系统配置</button>
+            </div>
+
+            <!-- 关键词管理 -->
+            <div class="tab-content active" id="keywords-tab">
+                <h3>关键词管理</h3>
+                <div class="form-group">
+                    <label>精确匹配（每行一个）</label>
+                    <textarea id="exactKeywords" placeholder="红包"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>模糊匹配（每行一个）</label>
+                    <textarea id="containsKeywords" placeholder="抢红包&#10;发红包"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>正则表达式（每行一个）</label>
+                    <textarea id="regexKeywords" placeholder="红包\\d+元"></textarea>
+                </div>
+                <button class="btn btn-save" onclick="saveKeywords()">💾 保存关键词</button>
+            </div>
+
+            <!-- 群组管理 -->
+            <div class="tab-content" id="groups-tab">
+                <h3>群组管理</h3>
+                <div id="groupsList"></div>
+                <button class="btn btn-save" onclick="addGroup()">➕ 添加群组</button>
+            </div>
+
+            <!-- 数据统计 -->
+            <div class="tab-content" id="statistics-tab">
+                <h3>数据统计</h3>
+
+                <!-- 时间范围选择 -->
+                <div class="stats-controls">
+                    <label>时间范围：</label>
+                    <select id="statsDays" onchange="loadStatistics()">
+                        <option value="7">最近7天</option>
+                        <option value="14">最近14天</option>
+                        <option value="30">最近30天</option>
+                        <option value="90">最近90天</option>
+                    </select>
+                    <button class="btn btn-save" onclick="loadStatistics()">刷新统计</button>
+                    <button class="btn btn-save" onclick="exportData()">导出CSV</button>
+                </div>
+
+                <!-- 统计摘要 -->
+                <div class="stats-summary">
+                    <div class="stat-item">
+                        <div class="stat-value" id="statTotalMessages">0</div>
+                        <div class="stat-label">总消息数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statKeywordHits">0</div>
+                        <div class="stat-label">关键词命中</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statHitRate">0%</div>
+                        <div class="stat-label">命中率</div>
+                    </div>
+                </div>
+
+                <!-- 图表 -->
+                <div class="charts-grid">
+                    <div class="chart-box">
+                        <h4>每日消息趋势</h4>
+                        <canvas id="dailyChart"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h4>关键词命中排行</h4>
+                        <canvas id="keywordChart"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h4>群组活跃度排行</h4>
+                        <canvas id="groupChart"></canvas>
+                    </div>
+                    <div class="chart-box">
+                        <h4>群组关键词命中分布</h4>
+                        <canvas id="groupPieChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- 历史记录 -->
+                <h4 style="margin-bottom: 10px;">最近命中记录</h4>
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>群组</th>
+                            <th>关键词</th>
+                            <th>消息内容</th>
+                            <th>发送者</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyBody">
+                        <tr><td colspan="5" style="text-align:center;color:#999;">暂无数据</td></tr>
+                    </tbody>
+                </table>
+                <div class="pagination">
+                    <button onclick="loadHistory(historyPage - 1)" id="prevPageBtn" disabled>上一页</button>
+                    <span id="pageInfo">第 1 页</span>
+                    <button onclick="loadHistory(historyPage + 1)" id="nextPageBtn" disabled>下一页</button>
+                </div>
+            </div>
+
+            <!-- 系统配置 -->
+            <div class="tab-content" id="config-tab">
+                <h3>系统配置</h3>
+                <div class="form-group">
+                    <label>通知消息格式</label>
+                    <textarea id="notificationFormat"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="includeLink"> 包含消息链接
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="forwardOriginal"> 转发原始消息
+                    </label>
+                </div>
+                <button class="btn btn-save" onclick="saveConfig()">💾 保存配置</button>
+                <button class="btn btn-save" onclick="exportConfig()">📥 导出配置</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 切换标签页
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+
+        // 显示消息
+        function showMessage(text, type = 'success') {
+            const message = document.getElementById('message');
+            message.textContent = text;
+            message.className = 'message ' + type;
+            message.style.display = 'block';
+            setTimeout(() => {
+                message.style.display = 'none';
+            }, 3000);
+        }
+
+        // 刷新状态
+        async function refreshStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+
+                if (data.success) {
+                    const status = data.status;
+                    document.getElementById('groupsCount').textContent = status.groups_count;
+                    document.getElementById('keywordsCount').textContent = status.keywords_count;
+                    document.getElementById('lastUpdate').textContent = status.last_update;
+
+                    const indicator = document.getElementById('statusIndicator');
+                    const statusText = document.getElementById('statusText');
+                    if (status.monitor_running) {
+                        indicator.className = 'status-indicator status-online';
+                        statusText.textContent = '运行中';
+                    } else {
+                        indicator.className = 'status-indicator status-offline';
+                        statusText.textContent = '已停止';
+                    }
+                }
+            } catch (error) {
+                console.error('刷新状态失败:', error);
+            }
+        }
+
+        // 加载关键词
+        async function loadKeywords() {
+            try {
+                const response = await fetch('/api/keywords');
+                const data = await response.json();
+
+                if (data.success) {
+                    const keywords = data.keywords;
+                    document.getElementById('exactKeywords').value = (keywords.exact || []).join('\n');
+                    document.getElementById('containsKeywords').value = (keywords.contains || []).join('\n');
+                    document.getElementById('regexKeywords').value = (keywords.regex || []).join('\n');
+                }
+            } catch (error) {
+                console.error('加载关键词失败:', error);
+            }
+        }
+
+        // 保存关键词
+        async function saveKeywords() {
+            const exact = document.getElementById('exactKeywords').value.split('\n').filter(k => k.trim());
+            const contains = document.getElementById('containsKeywords').value.split('\n').filter(k => k.trim());
+            const regex = document.getElementById('regexKeywords').value.split('\n').filter(k => k.trim());
+
+            try {
+                const response = await fetch('/api/keywords', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ exact, contains, regex })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    showMessage('关键词已保存', 'success');
+                    refreshStatus();
+                } else {
+                    showMessage('保存失败: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showMessage('保存失败: ' + error.message, 'error');
+            }
+        }
+
+        // 加载群组
+        async function loadGroups() {
+            try {
+                const response = await fetch('/api/groups');
+                const data = await response.json();
+
+                if (data.success) {
+                    const groupsList = document.getElementById('groupsList');
+                    groupsList.innerHTML = '';
+
+                    data.groups.forEach((group, index) => {
+                        const item = document.createElement('div');
+                        item.className = 'list-item';
+                        item.innerHTML = `
+                            <div class="list-item-content">
+                                <strong>${group.group_name}</strong><br>
+                                <small>ID: ${group.group_id}</small>
+                            </div>
+                            <div class="list-item-actions">
+                                <button class="btn btn-small ${group.enabled ? 'btn-success' : 'btn-danger'}"
+                                        onclick="toggleGroup(${index})">
+                                    ${group.enabled ? '✓ 启用' : '✗ 禁用'}
+                                </button>
+                            </div>
+                        `;
+                        groupsList.appendChild(item);
+                    });
+                }
+            } catch (error) {
+                console.error('加载群组失败:', error);
+            }
+        }
+
+        // 切换群组状态
+        async function toggleGroup(index) {
+            try {
+                const response = await fetch('/api/groups');
+                const data = await response.json();
+
+                if (data.success) {
+                    const groups = data.groups;
+                    groups[index].enabled = !groups[index].enabled;
+
+                    const saveResponse = await fetch('/api/groups', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(groups)
+                    });
+
+                    const saveData = await saveResponse.json();
+                    if (saveData.success) {
+                        showMessage('群组状态已更新', 'success');
+                        loadGroups();
+                        refreshStatus();
+                    }
+                }
+            } catch (error) {
+                showMessage('更新失败: ' + error.message, 'error');
+            }
+        }
+
+        // 添加群组
+        function addGroup() {
+            const groupId = prompt('请输入群组ID（负数）:');
+            const groupName = prompt('请输入群组名称:');
+
+            if (groupId && groupName) {
+                fetch('/api/groups')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            const groups = data.groups;
+                            groups.push({
+                                group_id: parseInt(groupId),
+                                group_name: groupName,
+                                enabled: true
+                            });
+
+                            return fetch('/api/groups', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(groups)
+                            });
+                        }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            showMessage('群组已添加', 'success');
+                            loadGroups();
+                            refreshStatus();
+                        }
+                    })
+                    .catch(error => {
+                        showMessage('添加失败: ' + error.message, 'error');
+                    });
+            }
+        }
+
+        // 加载配置
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const data = await response.json();
+
+                if (data.success) {
+                    const config = data.config;
+                    const notification = config.notification || {};
+
+                    document.getElementById('notificationFormat').value = notification.format || '';
+                    document.getElementById('includeLink').checked = notification.include_link !== false;
+                    document.getElementById('forwardOriginal').checked = notification.forward_original === true;
+                }
+            } catch (error) {
+                console.error('加载配置失败:', error);
+            }
+        }
+
+        // 保存配置
+        async function saveConfig() {
+            const notification = {
+                format: document.getElementById('notificationFormat').value,
+                include_link: document.getElementById('includeLink').checked,
+                forward_original: document.getElementById('forwardOriginal').checked
+            };
+
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notification })
+                });
+
+                const data = await response.json();
+                if (data.success) {
+                    showMessage('配置已保存', 'success');
+                } else {
+                    showMessage('保存失败: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showMessage('保存失败: ' + error.message, 'error');
+            }
+        }
+
+        // 导出配置
+        async function exportConfig() {
+            try {
+                const response = await fetch('/api/export');
+                const data = await response.json();
+
+                if (data.success) {
+                    const blob = new Blob([JSON.stringify(data.config, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'config_export.json';
+                    a.click();
+                    showMessage('配置已导出', 'success');
+                }
+            } catch (error) {
+                showMessage('导出失败: ' + error.message, 'error');
+            }
+        }
+
+        // 页面加载时初始化
+        window.onload = function() {
+            refreshStatus();
+            loadKeywords();
+            loadGroups();
+            loadConfig();
+
+            // 每30秒自动刷新状态
+            setInterval(refreshStatus, 30000);
+        };
+
+        // ==================== 统计图表相关 ====================
+
+        let dailyChartInstance = null;
+        let keywordChartInstance = null;
+        let groupChartInstance = null;
+        let groupPieChartInstance = null;
+        let historyPage = 1;
+        const historyPageSize = 20;
+
+        // 加载统计数据
+        async function loadStatistics() {
+            const days = document.getElementById('statsDays').value;
+            try {
+                const response = await fetch(`/api/statistics/overview?days=${days}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const { message_stats, keyword_stats, group_stats } = data.data;
+
+                    // 更新摘要数字
+                    document.getElementById('statTotalMessages').textContent = message_stats.total_messages;
+                    document.getElementById('statKeywordHits').textContent = message_stats.keyword_hits;
+                    const rate = message_stats.total_messages > 0
+                        ? ((message_stats.keyword_hits / message_stats.total_messages) * 100).toFixed(1)
+                        : 0;
+                    document.getElementById('statHitRate').textContent = rate + '%';
+
+                    // 渲染图表
+                    renderDailyChart(message_stats.daily_stats);
+                    renderKeywordChart(keyword_stats);
+                    renderGroupChart(group_stats);
+                    renderGroupPieChart(group_stats);
+                }
+            } catch (error) {
+                console.error('加载统计失败:', error);
+            }
+
+            // 同时加载历史记录
+            loadHistory(1);
+        }
+
+        // 每日消息趋势图（折线图）
+        function renderDailyChart(dailyStats) {
+            const ctx = document.getElementById('dailyChart').getContext('2d');
+            if (dailyChartInstance) dailyChartInstance.destroy();
+
+            const labels = dailyStats.map(d => d.date);
+            const counts = dailyStats.map(d => d.count);
+
+            dailyChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '消息数',
+                        data: counts,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 4,
+                        pointBackgroundColor: '#667eea'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        }
+
+        // 关键词命中排行（水平柱状图）
+        function renderKeywordChart(keywordStats) {
+            const ctx = document.getElementById('keywordChart').getContext('2d');
+            if (keywordChartInstance) keywordChartInstance.destroy();
+
+            const labels = keywordStats.map(k => k.keyword);
+            const counts = keywordStats.map(k => k.hit_count);
+            const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe',
+                           '#43e97b', '#fa709a', '#fee140', '#30cfd0', '#a8edea'];
+
+            keywordChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '命中次数',
+                        data: counts,
+                        backgroundColor: colors.slice(0, labels.length)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    indexAxis: 'y',
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        }
+
+        // 群组活跃度排行（柱状图）
+        function renderGroupChart(groupStats) {
+            const ctx = document.getElementById('groupChart').getContext('2d');
+            if (groupChartInstance) groupChartInstance.destroy();
+
+            const labels = groupStats.map(g => g.group_name);
+            const messageCounts = groupStats.map(g => g.message_count);
+            const hitCounts = groupStats.map(g => g.keyword_hit_count);
+
+            groupChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: '总消息',
+                            data: messageCounts,
+                            backgroundColor: 'rgba(102, 126, 234, 0.7)'
+                        },
+                        {
+                            label: '关键词命中',
+                            data: hitCounts,
+                            backgroundColor: 'rgba(118, 75, 162, 0.7)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                    }
+                }
+            });
+        }
+
+        // 群组命中分布（饼图）
+        function renderGroupPieChart(groupStats) {
+            const ctx = document.getElementById('groupPieChart').getContext('2d');
+            if (groupPieChartInstance) groupPieChartInstance.destroy();
+
+            const filtered = groupStats.filter(g => g.keyword_hit_count > 0);
+            const labels = filtered.map(g => g.group_name);
+            const counts = filtered.map(g => g.keyword_hit_count);
+            const colors = ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe',
+                           '#43e97b', '#fa709a', '#fee140', '#30cfd0', '#a8edea'];
+
+            groupPieChartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: counts,
+                        backgroundColor: colors.slice(0, labels.length)
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { font: { size: 12 } } }
+                    }
+                }
+            });
+        }
+
+        // 加载历史记录
+        async function loadHistory(page) {
+            if (page < 1) return;
+            historyPage = page;
+
+            try {
+                const offset = (page - 1) * historyPageSize;
+                const response = await fetch(`/api/history?limit=${historyPageSize}&offset=${offset}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    const { total, records } = data.data;
+                    const tbody = document.getElementById('historyBody');
+
+                    if (records.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;">暂无数据</td></tr>';
+                    } else {
+                        tbody.innerHTML = records.map(r => `
+                            <tr>
+                                <td>${r.created_at || '--'}</td>
+                                <td>${r.group_name || '--'}</td>
+                                <td>${r.matched_keyword ? '<span class="keyword-tag">' + r.matched_keyword + '</span>' : '--'}</td>
+                                <td title="${(r.message_text || '').replace(/"/g, '&quot;')}">${(r.message_text || '').substring(0, 60)}${(r.message_text || '').length > 60 ? '...' : ''}</td>
+                                <td>${r.sender_name || '--'}</td>
+                            </tr>
+                        `).join('');
+                    }
+
+                    // 更新分页
+                    const totalPages = Math.ceil(total / historyPageSize) || 1;
+                    document.getElementById('pageInfo').textContent = `第 ${page} / ${totalPages} 页 (共 ${total} 条)`;
+                    document.getElementById('prevPageBtn').disabled = page <= 1;
+                    document.getElementById('nextPageBtn').disabled = page >= totalPages;
+                }
+            } catch (error) {
+                console.error('加载历史记录失败:', error);
+            }
+        }
+
+        // 导出CSV数据
+        function exportData() {
+            window.location.href = '/api/export/data';
+        }
+    </script>
+</body>
+</html>

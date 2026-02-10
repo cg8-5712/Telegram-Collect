@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  # Telegram 监控系统（监控服务 + Web 管理界面）
+  tg-monitor:
+    build: .
+    container_name: tg-monitor
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./sessions:/app/sessions
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - SECRET_KEY=${SECRET_KEY:-change-this-to-a-random-secret-key}
+    stdin_open: true
+    tty: true
+    command: python start.py
+
