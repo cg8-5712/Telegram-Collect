@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from telethon import TelegramClient, events
 from telethon.tl.types import User, Channel
@@ -13,37 +13,46 @@ from telethon.errors import SessionPasswordNeededError
 
 from .keyword_matcher import KeywordMatcher
 from .statistics import StatisticsDB
+from .red_packet import RedPacketHandler
 from ..utils.config_reloader import ConfigReloader
 
 
-class TelegramMonitor:
-    """Telegram 监控器"""
+# 全局账号状态注册表，供 WebUI 查询
+# 结构: { account_name: { phone, online, username, groups_count, started_at } }
+monitor_registry: Dict[str, Dict[str, Any]] = {}
 
-    def __init__(self, config: Dict[str, Any], config_file: str = "config.yaml", enable_statistics=True):
+
+class TelegramMonitor:
+    """Telegram 监控器（单账号实例）"""
+
+    def __init__(self, config: Dict[str, Any], account: Dict[str, Any],
+                 config_file: str = "config.yaml", enable_statistics=True,
+                 stats_db: Optional[StatisticsDB] = None):
         """
         初始化监控器
 
         Args:
-            config: 配置字典
+            config: 完整配置字典
+            account: 单个账号配置 {phone, api_id, api_hash, session_file, name}
             config_file: 配置文件路径
             enable_statistics: 是否启用统计功能
+            stats_db: 共享的统计数据库实例（多账号共享同一个DB）
         """
         self.config = config
         self.config_file = config_file
         self.logger = logging.getLogger("TelegramMonitor")
 
-        # 账号B配置（监控账号）
-        monitor_account = config['monitor_account']
-        self.phone = monitor_account['phone']
-        self.api_id = monitor_account['api_id']
-        self.api_hash = monitor_account['api_hash']
-        session_file = monitor_account.get('session_file', 'sessions/monitor.session')
+        # 账号配置
+        self.account_name = account.get('name', account['phone'])
+        self.phone = account['phone']
+        self.api_id = account['api_id']
+        self.api_hash = account['api_hash']
+        session_file = account.get('session_file', f'sessions/monitor-{self.phone}.session')
 
         # 创建 session 目录
         Path(session_file).parent.mkdir(parents=True, exist_ok=True)
 
         # 创建 Telethon 客户端
-        # receive_updates=True 确保客户端接收实时更新
         self.client = TelegramClient(
             session_file,
             self.api_id,
@@ -74,23 +83,50 @@ class TelegramMonitor:
         self.retry_count = self.system_config.get('retry_count', 3)
         self.retry_delay = self.system_config.get('retry_delay', 5)
 
-        # 统计数据库
+        # 统计数据库（共享）
         self.enable_statistics = enable_statistics
-        if self.enable_statistics:
+        if stats_db:
+            self.stats_db = stats_db
+        elif self.enable_statistics:
             self.stats_db = StatisticsDB()
-            self.logger.info("统计功能已启用")
+        else:
+            self.stats_db = None
+
+        if self.enable_statistics:
+            self.logger.info(f"[{self.account_name}] 统计功能已启用")
+
+        # 红包处理器
+        red_packet_config = config.get('red_packet', {})
+        self.red_packet_handler = RedPacketHandler(
+            config=red_packet_config,
+            client=self.client,
+            notify_entity=None,
+            stats_db=self.stats_db,
+            account_name=self.account_name
+        )
 
         # 运行状态
         self.is_running = False
         self.notify_entity = None
+        self.username = None
+
+        # 注册到全局注册表
+        monitor_registry[self.account_name] = {
+            'phone': self.phone,
+            'online': False,
+            'username': None,
+            'groups_count': len(self.monitor_groups),
+            'started_at': None,
+        }
 
         # 配置热重载器
         self.config_reloader = ConfigReloader(config_file, check_interval=5)
         self.config_reloader.register_callback(self._on_config_reload)
-        self.logger.info("配置热重载已启用")
+        self.logger.info(f"[{self.account_name}] 配置热重载已启用")
 
     async def start(self):
         """启动监控"""
+        tag = f"[{self.account_name}]"
         try:
             # 连接并登录
             await self._connect_and_login()
@@ -104,7 +140,11 @@ class TelegramMonitor:
             # 标记为运行中
             self.is_running = True
 
-            self.logger.info("监控系统已启动，等待消息...")
+            # 更新注册表状态
+            monitor_registry[self.account_name]['online'] = True
+            monitor_registry[self.account_name]['started_at'] = datetime.now().isoformat()
+
+            self.logger.info(f"{tag} 监控系统已启动，等待消息...")
 
             # 启动配置检查任务
             asyncio.create_task(self._config_check_loop())
@@ -116,7 +156,7 @@ class TelegramMonitor:
             await self.client.run_until_disconnected()
 
         except Exception as e:
-            self.logger.error(f"监控启动失败: {e}", exc_info=True)
+            self.logger.error(f"{tag} 监控启动失败: {e}", exc_info=True)
             raise
         finally:
             await self.stop()
@@ -124,77 +164,91 @@ class TelegramMonitor:
     async def stop(self):
         """停止监控"""
         self.is_running = False
+        if self.account_name in monitor_registry:
+            monitor_registry[self.account_name]['online'] = False
         if self.client.is_connected():
             await self.client.disconnect()
-        self.logger.info("监控系统已停止")
+        self.logger.info(f"[{self.account_name}] 监控系统已停止")
 
     async def _connect_and_login(self):
-        """连接并登录账号B"""
-        self.logger.info(f"正在连接 Telegram...")
+        """连接并登录"""
+        tag = f"[{self.account_name}]"
+        self.logger.info(f"{tag} 正在连接 Telegram...")
 
         await self.client.connect()
 
         if not await self.client.is_user_authorized():
-            self.logger.info(f"账号未登录，开始登录流程...")
+            self.logger.info(f"{tag} 账号未登录，开始登录流程...")
 
             # Telegram 只支持手机号登录
             if not self.phone.startswith('+'):
-                self.logger.error(f"错误：Telegram 只支持手机号登录，不支持邮箱登录")
-                self.logger.error(f"请在 config.yaml 中将 phone 改为手机号格式：+8613397161336")
-                raise ValueError("phone 必须是手机号格式（以 + 开头），例如：+8613397161336")
+                self.logger.error(f"{tag} 错误：Telegram 只支持手机号登录，不支持邮箱登录")
+                raise ValueError(f"{tag} phone 必须是手机号格式（以 + 开头），例如：+8613397161336")
 
-            self.logger.info(f"使用手机号登录: {self.phone}")
+            self.logger.info(f"{tag} 使用手机号登录: {self.phone}")
 
             # 发送验证码
             await self.client.send_code_request(self.phone)
 
             # 等待用户输入验证码
-            code = input("请输入验证码（发送到 Telegram App）: ")
+            code = input(f"{tag} 请输入验证码（发送到 Telegram App）: ")
             try:
                 await self.client.sign_in(self.phone, code)
             except SessionPasswordNeededError:
                 # 需要两步验证密码
-                password = input("请输入两步验证密码: ")
+                password = input(f"{tag} 请输入两步验证密码: ")
                 await self.client.sign_in(password=password)
 
-            self.logger.info("登录成功！")
+            self.logger.info(f"{tag} 登录成功！")
         else:
-            self.logger.info("账号已登录")
+            self.logger.info(f"{tag} 账号已登录")
 
         # 获取当前用户信息
         me = await self.client.get_me()
-        self.logger.info(f"当前账号: {me.first_name} (@{me.username})")
+        self.username = me.username
+        monitor_registry[self.account_name]['username'] = me.username
+        self.logger.info(f"{tag} 当前账号: {me.first_name} (@{me.username})")
 
     async def _get_notify_entity(self):
         """获取通知目标实体（账号A）"""
-        self.logger.info("正在获取通知目标...")
+        tag = f"[{self.account_name}]"
+        self.logger.info(f"{tag} 正在获取通知目标...")
 
         try:
             if 'username' in self.notify_target:
                 username = self.notify_target['username']
                 self.notify_entity = await self.client.get_entity(username)
-                self.logger.info(f"通知目标: {username}")
+                self.logger.info(f"{tag} 通知目标: {username}")
             elif 'user_id' in self.notify_target:
                 user_id = self.notify_target['user_id']
                 self.notify_entity = await self.client.get_entity(user_id)
-                self.logger.info(f"通知目标 ID: {user_id}")
+                self.logger.info(f"{tag} 通知目标 ID: {user_id}")
             else:
                 raise ValueError("notify_target 必须配置 username 或 user_id")
 
+            # 设置红包处理器的通知实体
+            self.red_packet_handler.notify_entity = self.notify_entity
+
         except Exception as e:
-            self.logger.error(f"获取通知目标失败: {e}")
+            self.logger.error(f"{tag} 获取通知目标失败: {e}")
             raise
 
     def _register_handlers(self):
         """注册消息事件处理器"""
-        self.logger.info("注册消息处理器...")
+        tag = f"[{self.account_name}]"
+        self.logger.info(f"{tag} 注册消息处理器...")
 
         # 监听指定群组的新消息
         @self.client.on(events.NewMessage(chats=list(self.monitor_groups.keys())))
         async def handle_new_message(event):
             await self._handle_message(event)
 
-        self.logger.info(f"已注册 {len(self.monitor_groups)} 个群组的消息监听")
+        # 监听消息编辑（红包领取结果通常通过编辑消息展示）
+        @self.client.on(events.MessageEdited(chats=list(self.monitor_groups.keys())))
+        async def handle_edited_message(event):
+            await self._handle_edited_message(event)
+
+        self.logger.info(f"{tag} 已注册 {len(self.monitor_groups)} 个群组的消息监听")
 
     async def _config_check_loop(self):
         """配置检查循环"""
@@ -226,7 +280,8 @@ class TelegramMonitor:
             new_config: 新配置
         """
         try:
-            self.logger.info("开始应用新配置...")
+            tag = f"[{self.account_name}]"
+            self.logger.info(f"{tag} 开始应用新配置...")
 
             # 更新监控群组
             old_groups = set(self.monitor_groups.keys())
@@ -237,32 +292,41 @@ class TelegramMonitor:
             }
             new_groups = set(new_groups_dict.keys())
 
-            if old_groups != new_groups:
-                self.monitor_groups = new_groups_dict
-                self.logger.info(f"监控群组已更新: {len(self.monitor_groups)} 个群组")
+            # 总是更新群组配置（mode 等字段可能变化）
+            self.monitor_groups = new_groups_dict
+            if self.account_name in monitor_registry:
+                monitor_registry[self.account_name]['groups_count'] = len(self.monitor_groups)
+            self.logger.info(f"{tag} 监控群组已更新: {len(self.monitor_groups)} 个群组")
 
-                # 重新注册事件处理器
+            if old_groups != new_groups:
+                # 群组列表变化，重新注册事件处理器
                 self.client.remove_event_handler(self._handle_message)
                 self._register_handlers()
-                self.logger.info("事件处理器已重新注册")
+                self.logger.info(f"{tag} 事件处理器已重新注册")
 
             # 更新关键词匹配器
             if new_config.get('keywords') != self.config.get('keywords'):
                 self.keyword_matcher = KeywordMatcher(new_config['keywords'])
-                self.logger.info("关键词配置已更新")
+                self.logger.info(f"{tag} 关键词配置已更新")
 
             # 更新通知配置
             if new_config.get('notification') != self.notification_config:
                 self.notification_config = new_config.get('notification', {})
-                self.logger.info("通知模板已更新")
+                self.logger.info(f"{tag} 通知模板已更新")
+
+            # 更新红包配置
+            new_rp_config = new_config.get('red_packet', {})
+            if new_rp_config != self.config.get('red_packet', {}):
+                self.red_packet_handler.update_config(new_rp_config)
+                self.logger.info(f"{tag} 红包配置已更新")
 
             # 更新配置引用
             self.config = new_config
 
-            self.logger.info("配置重载完成")
+            self.logger.info(f"{tag} 配置重载完成")
 
         except Exception as e:
-            self.logger.error(f"应用新配置失败: {e}", exc_info=True)
+            self.logger.error(f"{tag} 应用新配置失败: {e}", exc_info=True)
 
     async def _handle_message(self, event):
         """
@@ -298,8 +362,35 @@ class TelegramMonitor:
             # DEBUG: 打印每条消息
             self.logger.debug(f"[{group_name}] {sender_name}: {text}")
 
-            # 匹配关键词
-            matched_keyword = self.keyword_matcher.match(text)
+            # 获取群组运行模式: monitor / red_packet / both
+            group_config = self.monitor_groups.get(group_id, {})
+            group_mode = group_config.get('mode', 'both')
+
+            # === 红包自动领取检测 ===
+            if group_mode in ('red_packet', 'both'):
+                try:
+                    handled = await self.red_packet_handler.handle_red_packet(
+                        event, group_name=group_name, group_id=group_id
+                    )
+                    if handled:
+                        # 红包已处理，记录统计后跳过普通关键词通知
+                        if self.enable_statistics:
+                            self.stats_db.record_message(
+                                group_id=group_id,
+                                group_name=group_name,
+                                message_text=text,
+                                sender_id=sender_id,
+                                sender_name=sender_name,
+                                matched_keyword="[红包自动领取]"
+                            )
+                        return
+                except Exception as e:
+                    self.logger.error(f"红包处理异常: {e}", exc_info=True)
+
+            # === 关键词匹配 ===
+            matched_keyword = None
+            if group_mode in ('monitor', 'both'):
+                matched_keyword = self.keyword_matcher.match(text)
 
             # 记录到统计数据库
             if self.enable_statistics:
@@ -321,6 +412,26 @@ class TelegramMonitor:
 
         except Exception as e:
             self.logger.error(f"处理消息失败: {e}", exc_info=True)
+
+    async def _handle_edited_message(self, event):
+        """
+        处理编辑后的消息（红包领取结果通常通过编辑原消息展示）
+
+        Args:
+            event: 消息编辑事件
+        """
+        try:
+            chat = await event.get_chat()
+            group_id = chat.id
+            group_name = chat.title if hasattr(chat, 'title') else str(chat.id)
+            group_config = self.monitor_groups.get(group_id, {})
+            group_mode = group_config.get('mode', 'both')
+            if group_mode in ('red_packet', 'both'):
+                await self.red_packet_handler.handle_edited_message(
+                    event, group_name=group_name, group_id=group_id
+                )
+        except Exception as e:
+            self.logger.error(f"处理编辑消息失败: {e}", exc_info=True)
 
     async def _send_notification(self, event, matched_keyword: str):
         """

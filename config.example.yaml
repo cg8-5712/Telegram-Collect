@@ -1,14 +1,22 @@
 # Telegram 监控配置示例
 # 复制此文件为 config.yaml 并填写你的配置
 
-# 账号B - 监控账号（需要登录）
-monitor_account:
-  phone: "+86138xxxxxxxx"  # 手机号（必须以+开头，如：+8613812345678）
-  api_id: "YOUR_API_ID"     # 从 https://my.telegram.org 获取
-  api_hash: "YOUR_API_HASH" # 从 https://my.telegram.org 获取
-  session_file: "sessions/monitor.session"
+# 监控账号列表（支持多账号并发运行）
+monitor_accounts:
+  - name: "主账号"                      # 账号备注名
+    phone: "+86138xxxxxxxx"             # 手机号（必须以+开头，如：+8613812345678）
+    api_id: "YOUR_API_ID"              # 从 https://my.telegram.org 获取
+    api_hash: "YOUR_API_HASH"          # 从 https://my.telegram.org 获取
+    session_file: "sessions/monitor-138xxxxxxxx.session"
+    enabled: true                       # 是否启用
 
-# 注意：Telegram 只支持手机号登录，不支持邮箱登录
+  # 可以添加更多账号
+  # - name: "小号"
+  #   phone: "+86139xxxxxxxx"
+  #   api_id: "YOUR_API_ID2"
+  #   api_hash: "YOUR_API_HASH2"
+  #   session_file: "sessions/monitor-139xxxxxxxx.session"
+  #   enabled: true
 
 # 账号A - 通知接收账号（无需登录）
 notify_target:
@@ -22,11 +30,13 @@ monitor_groups:
   - group_id: -1001234567890  # 群组ID（负数）
     group_name: "红包福利群"
     enabled: true
+    mode: both  # 运行模式: monitor(仅监控关键词) / red_packet(仅抢红包) / both(两者都启用)
 
   # 可以添加更多群组
   # - group_id: -1009876543210
   #   group_name: "优惠活动群"
   #   enabled: true
+  #   mode: monitor
 
 # 关键词配置
 keywords:
@@ -84,3 +94,57 @@ system:
   # 发送失败重试
   retry_count: 3      # 重试次数
   retry_delay: 5      # 重试延迟（秒）
+
+# 红包自动领取配置
+red_packet:
+  # 是否启用红包自动领取
+  enabled: true
+
+  # 点击前的随机延迟范围（秒）
+  # 太快容易被系统封号，建议 1~4 秒
+  delay_min: 1.0
+  delay_max: 3.5
+
+  # 是否发送领取结果通知到账号A
+  notify: true
+
+  # 红包检测关键词（消息中包含任一即触发检测）
+  keywords:
+    - "红包"
+    - "领取条件"
+    - "计算"
+
+  # 必须包含的关键词（确保是计算类型的红包）
+  required_keywords:
+    - "计算"
+
+  # 计算式提取正则（从红包消息中提取数学题）
+  calc_patterns:
+    - '计算[：:]\s*(.+?)\s*[=＝]\s*[?？]'
+    - '计算[：:]\s*(.+?)\s*[?？]'
+    - '题目[：:]\s*(.+?)\s*[=＝]\s*[?？]'
+    - '计算[：:]\s*(.+?)$'
+
+  # 金额提取正则
+  amount_patterns:
+    - '总金额[：:]\s*(\d+(?:\.\d+)?)\s*USDT'
+    - '金额[：:]\s*(\d+(?:\.\d+)?)\s*USDT'
+
+  # 总数提取正则
+  count_patterns:
+    - '总数[：:]\s*(\d+)'
+    - '个数[：:]\s*(\d+)'
+
+  # 领取结果关键词（消息编辑时检测）
+  result_keywords:
+    - "恭喜"
+    - "领取成功"
+    - "已领取"
+    - "获得"
+
+  # 领取金额提取正则
+  received_patterns:
+    - '领取成功.*?获得\s*(\d+(?:\.\d+)?)\s*USDT'
+    - '领取[了到]\s*(\d+(?:\.\d+)?)\s*USDT'
+    - '获得[了到]?\s*(\d+(?:\.\d+)?)\s*USDT'
+    - '恭喜.*?(\d+(?:\.\d+)?)\s*USDT'

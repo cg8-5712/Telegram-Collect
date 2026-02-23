@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from src.core.statistics import StatisticsDB
+from src.core.monitor import monitor_registry
 
 
 app = Flask(__name__)
@@ -110,7 +111,10 @@ def get_config(current_user):
             config = yaml.safe_load(f)
 
         # 隐藏敏感信息
-        if 'monitor_account' in config:
+        if 'monitor_accounts' in config:
+            for acc in config['monitor_accounts']:
+                acc['api_hash'] = '***'
+        elif 'monitor_account' in config:
             config['monitor_account']['api_hash'] = '***'
 
         return jsonify({'success': True, 'config': config})
@@ -137,6 +141,8 @@ def update_config(current_user):
             config['monitor_groups'] = data['monitor_groups']
         if 'notification' in data:
             config['notification'] = data['notification']
+        if 'red_packet' in data:
+            config['red_packet'] = data['red_packet']
 
         # 保存配置
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -223,14 +229,15 @@ def update_groups(current_user):
 @app.route('/api/status', methods=['GET'])
 @token_required
 def get_status(current_user):
-    """获取系统状态"""
+    """获取系统状态（含多账号在线信息）"""
     try:
-        # 这里可以添加实际的状态检查逻辑
         status = {
-            'monitor_running': True,  # 监控是否运行
-            'account_online': True,   # 账号是否在线
-            'groups_count': 0,        # 监控群组数量
-            'keywords_count': 0,      # 关键词数量
+            'monitor_running': any(v.get('online') for v in monitor_registry.values()),
+            'accounts': dict(monitor_registry),  # 每个账号的详细状态
+            'accounts_total': len(monitor_registry),
+            'accounts_online': sum(1 for v in monitor_registry.values() if v.get('online')),
+            'groups_count': 0,
+            'keywords_count': 0,
             'last_update': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
 
@@ -263,7 +270,11 @@ def export_config(current_user):
             config = yaml.safe_load(f)
 
         # 隐藏敏感信息
-        if 'monitor_account' in config:
+        if 'monitor_accounts' in config:
+            for acc in config['monitor_accounts']:
+                acc['api_hash'] = '***'
+                acc['phone'] = '***'
+        elif 'monitor_account' in config:
             config['monitor_account']['api_hash'] = '***'
             config['monitor_account']['phone'] = '***'
 
@@ -278,6 +289,82 @@ def export_config(current_user):
 def verify_token(current_user):
     """验证 token 是否有效"""
     return jsonify({'success': True, 'username': current_user})
+
+
+# ==================== 账号管理 API ====================
+
+@app.route('/api/accounts', methods=['GET'])
+@token_required
+def get_accounts(current_user):
+    """获取账号列表（含实时在线状态）"""
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        accounts = config.get('monitor_accounts', [])
+        # 如果是旧配置格式，转成列表
+        if not accounts and 'monitor_account' in config:
+            acc = config['monitor_account']
+            acc.setdefault('name', '默认账号')
+            acc.setdefault('enabled', True)
+            accounts = [acc]
+
+        # 合并运行时在线状态
+        result = []
+        for acc in accounts:
+            name = acc.get('name', acc.get('phone', ''))
+            registry_info = monitor_registry.get(name, {})
+            result.append({
+                'name': name,
+                'phone': acc.get('phone', ''),
+                'api_id': acc.get('api_id', ''),
+                'session_file': acc.get('session_file', ''),
+                'enabled': acc.get('enabled', True),
+                'online': registry_info.get('online', False),
+                'username': registry_info.get('username'),
+                'started_at': registry_info.get('started_at'),
+            })
+
+        return jsonify({'success': True, 'data': result})
+    except Exception as e:
+        logger.error(f"获取账号列表失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/accounts', methods=['POST'])
+@token_required
+def update_accounts(current_user):
+    """更新账号列表（新增/编辑/删除/启停）"""
+    try:
+        data = request.get_json()
+
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        # data 是完整的账号数组
+        new_accounts = data if isinstance(data, list) else data.get('accounts', [])
+
+        # 保留原有 api_hash（前端可能传 *** 回来）
+        old_accounts = {
+            acc.get('name', acc.get('phone', '')): acc
+            for acc in config.get('monitor_accounts', [])
+        }
+        for acc in new_accounts:
+            name = acc.get('name', acc.get('phone', ''))
+            if acc.get('api_hash') in (None, '', '***') and name in old_accounts:
+                acc['api_hash'] = old_accounts[name].get('api_hash', '')
+
+        config['monitor_accounts'] = new_accounts
+        # 如果存在旧格式，清除
+        config.pop('monitor_account', None)
+
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+
+        return jsonify({'success': True, 'message': '账号列表已更新'})
+    except Exception as e:
+        logger.error(f"更新账号失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 
 # ==================== 统计相关 API ====================
@@ -417,6 +504,96 @@ def export_data(current_user):
         )
     except Exception as e:
         logger.error(f"导出数据失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+# ==================== 红包相关 API ====================
+
+@app.route('/api/red_packet/config', methods=['GET'])
+@token_required
+def get_red_packet_config(current_user):
+    """获取红包配置"""
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        rp_config = config.get('red_packet', {})
+        return jsonify({'success': True, 'data': rp_config})
+    except Exception as e:
+        logger.error(f"获取红包配置失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/red_packet/config', methods=['POST'])
+@token_required
+def update_red_packet_config(current_user):
+    """更新红包配置"""
+    try:
+        data = request.get_json()
+
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+
+        config['red_packet'] = data
+
+        with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+
+        return jsonify({'success': True, 'message': '红包配置已更新'})
+    except Exception as e:
+        logger.error(f"更新红包配置失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/red_packet/stats', methods=['GET'])
+@token_required
+def get_red_packet_stats(current_user):
+    """获取红包统计概览"""
+    try:
+        days = request.args.get('days', 7, type=int)
+        stats = stats_db.get_red_packet_stats(days=days)
+        return jsonify({'success': True, 'data': stats})
+    except Exception as e:
+        logger.error(f"获取红包统计失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/red_packet/history', methods=['GET'])
+@token_required
+def get_red_packet_history(current_user):
+    """获取红包领取历史"""
+    try:
+        limit = request.args.get('limit', 50, type=int)
+        offset = request.args.get('offset', 0, type=int)
+        group_id = request.args.get('group_id', type=int)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+
+        result = stats_db.get_red_packet_history(
+            limit=limit,
+            offset=offset,
+            group_id=group_id,
+            start_date=start_date,
+            end_date=end_date
+        )
+        return jsonify({'success': True, 'data': result})
+    except Exception as e:
+        logger.error(f"获取红包历史失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
+@app.route('/api/red_packet/calendar', methods=['GET'])
+@token_required
+def get_red_packet_calendar(current_user):
+    """获取红包日历数据"""
+    try:
+        now = datetime.now()
+        year = request.args.get('year', now.year, type=int)
+        month = request.args.get('month', now.month, type=int)
+
+        calendar_data = stats_db.get_red_packet_calendar(year=year, month=month)
+        return jsonify({'success': True, 'data': calendar_data, 'year': year, 'month': month})
+    except Exception as e:
+        logger.error(f"获取红包日历失败: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
