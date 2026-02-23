@@ -1083,8 +1083,13 @@
                     document.getElementById('forwardOriginal').checked = notification.forward_original === true;
 
                     // 加载通知人列表
-                    const targets = config.notify_targets || config.notify_target ? [config.notify_target] : [];
-                    renderNotifyTargets(Array.isArray(targets) ? targets : [targets]);
+                    let targets = [];
+                    if (Array.isArray(config.notify_targets) && config.notify_targets.length > 0) {
+                        targets = config.notify_targets;
+                    } else if (config.notify_target && (config.notify_target.username || config.notify_target.user_id)) {
+                        targets = [config.notify_target];
+                    }
+                    renderNotifyTargets(targets);
                 }
             } catch (error) {
                 console.error('加载配置失败:', error);
@@ -1094,6 +1099,8 @@
         let cachedNotifyTargets = [];
 
         function renderNotifyTargets(targets) {
+            // 过滤掉无效条目
+            targets = (targets || []).filter(t => t && (t.username || t.user_id));
             cachedNotifyTargets = targets;
             const container = document.getElementById('notifyTargetsList');
             container.innerHTML = '';
