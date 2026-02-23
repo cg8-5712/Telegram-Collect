@@ -540,7 +540,79 @@
                 <h3>👤 账号管理</h3>
                 <p style="color:#666;margin-bottom:15px;font-size:13px;">管理多个 Telegram 监控账号，每个账号独立运行。修改后需要重启服务生效。</p>
                 <div id="accountsList"></div>
-                <button class="btn btn-save" onclick="addAccount()" style="margin-top:10px;">➕ 添加账号</button>
+                <button class="btn btn-save" onclick="openAccountModal(-1)" style="margin-top:10px;">➕ 添加账号</button>
+            </div>
+
+            <!-- 账号编辑弹窗 -->
+            <div id="accountModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center;">
+                <div style="background:white;border-radius:10px;padding:25px;width:480px;max-width:90%;max-height:85vh;overflow-y:auto;">
+                    <h3 id="accountModalTitle" style="margin-bottom:15px;">添加账号</h3>
+                    <input type="hidden" id="accEditIndex" value="-1">
+                    <div class="form-group">
+                        <label>账号名称</label>
+                        <input type="text" id="accName" placeholder="备注名，如：主账号">
+                    </div>
+                    <div class="form-group">
+                        <label>手机号</label>
+                        <input type="text" id="accPhone" placeholder="+8613812345678">
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
+                        <div class="form-group">
+                            <label>API ID</label>
+                            <input type="text" id="accApiId">
+                        </div>
+                        <div class="form-group">
+                            <label>API Hash</label>
+                            <input type="text" id="accApiHash" placeholder="编辑时留空保持不变">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Session 文件</label>
+                        <input type="text" id="accSession" placeholder="自动生成">
+                    </div>
+                    <hr style="margin:15px 0;">
+                    <h4 style="margin-bottom:10px;">🌐 代理配置</h4>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="accProxyEnabled"> 启用代理</label>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 2fr 1fr;gap:10px;">
+                        <div class="form-group">
+                            <label>类型</label>
+                            <select id="accProxyType" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:5px;">
+                                <option value="socks5">SOCKS5</option>
+                                <option value="socks4">SOCKS4</option>
+                                <option value="http">HTTP</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>地址</label>
+                            <input type="text" id="accProxyHost" placeholder="127.0.0.1">
+                        </div>
+                        <div class="form-group">
+                            <label>端口</label>
+                            <input type="number" id="accProxyPort" placeholder="7890">
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                        <div class="form-group">
+                            <label>用户名（可选）</label>
+                            <input type="text" id="accProxyUser" placeholder="留空">
+                        </div>
+                        <div class="form-group">
+                            <label>密码（可选）</label>
+                            <input type="text" id="accProxyPass" placeholder="留空">
+                        </div>
+                    </div>
+                    <p style="color:#888;font-size:12px;margin-bottom:15px;">💡 Docker 部署时，地址填 host.docker.internal 指向宿主机 Clash</p>
+                    <div class="form-group">
+                        <label>📍 连接地区（备注）</label>
+                        <input type="text" id="accRegion" placeholder="如：香港、日本、美国（实际地区由Clash节点决定）">
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;">
+                        <button class="btn" onclick="closeAccountModal()" style="background:#eee;">取消</button>
+                        <button class="btn btn-save" onclick="saveAccountFromModal()">💾 保存</button>
+                    </div>
+                </div>
             </div>
 
             <!-- 🎁 红包管理 -->
@@ -1087,11 +1159,13 @@
                             <span class="status-indicator ${onlineClass}"></span>
                             ${acc.name || acc.phone}${usernameText}
                         </strong><br>
-                        <small>📱 ${acc.phone} &nbsp;|&nbsp; API ID: ${acc.api_id} &nbsp;|&nbsp; Session: ${acc.session_file || 'auto'}</small>
+                        <small>📱 ${acc.phone} &nbsp;|&nbsp; API ID: ${acc.api_id}</small>
+                        ${acc.proxy ? '<br><small>🌐 代理: ' + acc.proxy + (acc.region ? ' &nbsp;📍 ' + acc.region : '') + '</small>' : '<br><small>🌐 代理: 直连</small>'}
                         ${acc.started_at ? '<br><small>🕐 启动于: ' + acc.started_at + '</small>' : ''}
                     </div>
                     <div class="list-item-actions">
                         <span style="font-size:12px;color:${acc.online ? '#4caf50' : '#999'};margin-right:8px;">${onlineText}</span>
+                        <button class="btn btn-small btn-save" onclick="openAccountModal(${index})">✏️</button>
                         <button class="btn btn-small ${acc.enabled ? 'btn-success' : 'btn-danger'}"
                                 onclick="toggleAccount(${index})">
                             ${acc.enabled ? '✓ 启用' : '✗ 禁用'}
@@ -1157,47 +1231,128 @@
         }
 
         function addAccount() {
-            const name = prompt('账号名称（备注）:');
-            if (!name) return;
-            const phone = prompt('手机号（国际格式，如 +8613812345678）:');
-            if (!phone) return;
-            const api_id = prompt('API ID:');
-            if (!api_id) return;
-            const api_hash = prompt('API Hash:');
-            if (!api_hash) return;
+            openAccountModal(-1);
+        }
 
-            fetch('/api/accounts')
-                .then(res => res.json())
-                .then(data => {
-                    if (!data.success) return;
-                    const accounts = data.data;
-                    accounts.push({
-                        name: name,
-                        phone: phone,
-                        api_id: api_id,
-                        api_hash: api_hash,
-                        session_file: 'sessions/monitor-' + phone.replace('+', '') + '.session',
-                        enabled: true
-                    });
-                    return fetch('/api/accounts', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(accounts)
-                    });
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        showMessage('账号已添加（重启后生效）', 'success');
-                        loadAccounts();
-                        refreshStatus();
-                    } else {
-                        showMessage('添加失败: ' + data.message, 'error');
-                    }
-                })
-                .catch(error => {
-                    showMessage('添加失败: ' + error.message, 'error');
+        function openAccountModal(index) {
+            const modal = document.getElementById('accountModal');
+            const title = document.getElementById('accountModalTitle');
+            document.getElementById('accEditIndex').value = index;
+
+            if (index >= 0 && cachedAccounts[index]) {
+                const acc = cachedAccounts[index];
+                title.textContent = '编辑账号 - ' + (acc.name || acc.phone);
+                document.getElementById('accName').value = acc.name || '';
+                document.getElementById('accPhone').value = acc.phone || '';
+                document.getElementById('accApiId').value = acc.api_id || '';
+                document.getElementById('accApiHash').value = '';
+                document.getElementById('accApiHash').placeholder = '留空保持不变';
+                document.getElementById('accSession').value = acc.session_file || '';
+                // 代理
+                const pc = acc.proxy_config || {};
+                document.getElementById('accProxyEnabled').checked = !!(pc.enabled !== false && pc.host);
+                document.getElementById('accProxyType').value = pc.type || 'socks5';
+                document.getElementById('accProxyHost').value = pc.host || '';
+                document.getElementById('accProxyPort').value = pc.port || '';
+                document.getElementById('accProxyUser').value = pc.username || '';
+                document.getElementById('accProxyPass').value = pc.password || '';
+                document.getElementById('accRegion').value = acc.region || '';
+            } else {
+                title.textContent = '添加账号';
+                document.getElementById('accName').value = '';
+                document.getElementById('accPhone').value = '';
+                document.getElementById('accApiId').value = '';
+                document.getElementById('accApiHash').value = '';
+                document.getElementById('accApiHash').placeholder = '';
+                document.getElementById('accSession').value = '';
+                document.getElementById('accProxyEnabled').checked = false;
+                document.getElementById('accProxyType').value = 'socks5';
+                document.getElementById('accProxyHost').value = '';
+                document.getElementById('accProxyPort').value = '';
+                document.getElementById('accProxyUser').value = '';
+                document.getElementById('accProxyPass').value = '';
+                document.getElementById('accRegion').value = '';
+            }
+            modal.style.display = 'flex';
+        }
+
+        function closeAccountModal() {
+            document.getElementById('accountModal').style.display = 'none';
+        }
+
+        async function saveAccountFromModal() {
+            const index = parseInt(document.getElementById('accEditIndex').value);
+            const name = document.getElementById('accName').value.trim();
+            const phone = document.getElementById('accPhone').value.trim();
+            const api_id = document.getElementById('accApiId').value.trim();
+            const api_hash = document.getElementById('accApiHash').value.trim();
+            const session = document.getElementById('accSession').value.trim();
+
+            if (!name || !phone || !api_id) {
+                showMessage('请填写账号名称、手机号和 API ID', 'error');
+                return;
+            }
+
+            // 构建代理配置
+            let proxy = null;
+            if (document.getElementById('accProxyEnabled').checked) {
+                const host = document.getElementById('accProxyHost').value.trim();
+                const port = document.getElementById('accProxyPort').value.trim();
+                if (host) {
+                    proxy = {
+                        enabled: true,
+                        type: document.getElementById('accProxyType').value,
+                        host: host,
+                        port: parseInt(port) || 7890,
+                    };
+                    const user = document.getElementById('accProxyUser').value.trim();
+                    const pass = document.getElementById('accProxyPass').value.trim();
+                    if (user) proxy.username = user;
+                    if (pass) proxy.password = pass;
+                }
+            }
+
+            try {
+                const resp = await fetch('/api/accounts');
+                const data = await resp.json();
+                if (!data.success) return;
+
+                const accounts = data.data;
+                const accObj = {
+                    name: name,
+                    phone: phone,
+                    api_id: api_id,
+                    api_hash: api_hash || '***',
+                    session_file: session || 'sessions/monitor-' + phone.replace('+', '') + '.session',
+                    enabled: (index >= 0 && accounts[index]) ? accounts[index].enabled : true,
+                };
+                const region = document.getElementById('accRegion').value.trim();
+                if (region) accObj.region = region;
+                if (proxy) accObj.proxy = proxy;
+
+                if (index >= 0) {
+                    accounts[index] = accObj;
+                } else {
+                    accounts.push(accObj);
+                }
+
+                const saveResp = await fetch('/api/accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(accounts)
                 });
+                const saveData = await saveResp.json();
+                if (saveData.success) {
+                    showMessage(index >= 0 ? '账号已更新（重启后生效）' : '账号已添加（重启后生效）', 'success');
+                    closeAccountModal();
+                    loadAccounts();
+                    refreshStatus();
+                } else {
+                    showMessage('保存失败: ' + saveData.message, 'error');
+                }
+            } catch (error) {
+                showMessage('保存失败: ' + error.message, 'error');
+            }
         }
 
         // ==================== 红包管理相关 ====================

@@ -38,7 +38,7 @@ def _validate_config(config: Dict[str, Any]) -> None:
         config: 配置字典
     """
     required_keys = [
-        'notify_target',
+        'notify_targets',
         'monitor_groups',
         'keywords'
     ]
@@ -72,9 +72,12 @@ def _validate_config(config: Dict[str, Any]) -> None:
         raise ValueError("配置文件缺少必需项: monitor_accounts 或 monitor_account")
 
     # 验证账号A配置
-    notify_target = config['notify_target']
-    if 'username' not in notify_target and 'user_id' not in notify_target:
-        raise ValueError("notify_target 必须配置 username 或 user_id")
+    notify_targets = config['notify_targets']
+    if not isinstance(notify_targets, list):
+        raise ValueError("notify_targets 必须是列表格式")
+    for i, target in enumerate(notify_targets):
+        if 'username' not in target and 'user_id' not in target:
+            raise ValueError(f"notify_targets[{i}] 必须配置 username 或 user_id")
 
     # 验证群组配置
     if not config['monitor_groups']:

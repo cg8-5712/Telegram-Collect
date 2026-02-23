@@ -51,7 +51,8 @@ class RedPacketHandler:
         """
         self.logger = logging.getLogger("TelegramMonitor")
         self.client = client
-        self.notify_entity = notify_entity
+        self.notify_entity = notify_entity  # 兼容旧单个
+        self.notify_entities = [notify_entity] if notify_entity else []
         self.stats_db = stats_db
         self.account_name = account_name
 
@@ -374,14 +375,15 @@ class RedPacketHandler:
         return True
 
     async def _send_notify(self, text: str):
-        """发送通知消息"""
-        if not self.notify or not self.notify_entity:
+        """发送通知消息给所有通知目标"""
+        if not self.notify or not self.notify_entities:
             return
-        try:
-            await self.client.send_message(self.notify_entity, text)
-            self.logger.debug("红包通知已发送")
-        except Exception as e:
-            self.logger.error(f"发送红包通知失败: {e}")
+        for entity in self.notify_entities:
+            try:
+                await self.client.send_message(entity, text)
+                self.logger.debug("红包通知已发送")
+            except Exception as e:
+                self.logger.error(f"发送红包通知失败: {e}")
 
     async def handle_edited_message(self, event, group_name: str = "", group_id: int = 0):
         """处理编辑后的红包消息（领取结果通常通过编辑消息展示）"""

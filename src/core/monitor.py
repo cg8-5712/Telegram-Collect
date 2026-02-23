@@ -52,16 +52,53 @@ class TelegramMonitor:
         # 创建 session 目录
         Path(session_file).parent.mkdir(parents=True, exist_ok=True)
 
+        # 代理配置 (支持字符串或dict格式)
+        proxy_config = account.get('proxy')
+        if isinstance(proxy_config, str):
+            import re
+            m = re.match(r'^(socks5|socks4|http)://([^:]+):(\d+)$', proxy_config)
+            if m:
+                proxy_config = {'enabled': True, 'type': m.group(1), 'host': m.group(2), 'port': int(m.group(3))}
+            else:
+                proxy_config = None
+        proxy = None
+        if proxy_config and isinstance(proxy_config, dict) and proxy_config.get('enabled', True):
+            import socks
+            proxy_type_map = {
+                'socks5': socks.SOCKS5,
+                'socks4': socks.SOCKS4,
+                'http': socks.HTTP,
+            }
+            ptype = proxy_type_map.get(proxy_config.get('type', 'socks5').lower(), socks.SOCKS5)
+            proxy = (
+                ptype,
+                proxy_config.get('host', '127.0.0.1'),
+                int(proxy_config.get('port', 7897)),
+                True,  # rdns
+                proxy_config.get('username'),
+                proxy_config.get('password'),
+            )
+            self.logger.info(f"[{self.account_name}] 使用代理: {proxy_config.get('type','socks5')}://{proxy_config.get('host','127.0.0.1')}:{proxy_config.get('port',7890)}")
+        self.proxy_info = proxy_config  # 保存用于 WebUI 展示
+
         # 创建 Telethon 客户端
         self.client = TelegramClient(
             session_file,
             self.api_id,
             self.api_hash,
-            receive_updates=True
+            receive_updates=True,
+            proxy=proxy
         )
 
-        # 账号A配置（通知接收账号）
-        self.notify_target = config['notify_target']
+        # 通知目标（支持多人）
+        # 兼容旧格式 notify_target（单个）和新格式 notify_targets（列表）
+        if 'notify_targets' in config:
+            targets = config['notify_targets']
+            self.notify_targets = targets if isinstance(targets, list) else [targets]
+        elif 'notify_target' in config:
+            self.notify_targets = [config['notify_target']]
+        else:
+            self.notify_targets = []
 
         # 监控群组
         self.monitor_groups = {
@@ -107,7 +144,7 @@ class TelegramMonitor:
 
         # 运行状态
         self.is_running = False
-        self.notify_entity = None
+        self.notify_entities = []  # 多个通知目标实体
         self.username = None
 
         # 注册到全局注册表
@@ -117,6 +154,7 @@ class TelegramMonitor:
             'username': None,
             'groups_count': len(self.monitor_groups),
             'started_at': None,
+            'proxy': f"{proxy_config.get('type','socks5')}://{proxy_config.get('host','127.0.0.1')}:{proxy_config.get('port',7890)}" if proxy_config and proxy_config.get('enabled', True) else None,
         }
 
         # 配置热重载器
@@ -209,29 +247,60 @@ class TelegramMonitor:
         monitor_registry[self.account_name]['username'] = me.username
         self.logger.info(f"{tag} 当前账号: {me.first_name} (@{me.username})")
 
-    async def _get_notify_entity(self):
-        """获取通知目标实体（账号A）"""
-        tag = f"[{self.account_name}]"
-        self.logger.info(f"{tag} 正在获取通知目标...")
+        # 将 username 持久化写回 config.yaml
+        self._save_username_to_config(me.username)
 
+    def _save_username_to_config(self, username: str):
+        """将登录后获取的 username 写回 config.yaml，以便 WebUI 离线时也能显示"""
         try:
-            if 'username' in self.notify_target:
-                username = self.notify_target['username']
-                self.notify_entity = await self.client.get_entity(username)
-                self.logger.info(f"{tag} 通知目标: {username}")
-            elif 'user_id' in self.notify_target:
-                user_id = self.notify_target['user_id']
-                self.notify_entity = await self.client.get_entity(user_id)
-                self.logger.info(f"{tag} 通知目标 ID: {user_id}")
-            else:
-                raise ValueError("notify_target 必须配置 username 或 user_id")
+            import yaml
+            with open(self.config_file, 'r', encoding='utf-8') as f:
+                cfg = yaml.safe_load(f)
 
-            # 设置红包处理器的通知实体
-            self.red_packet_handler.notify_entity = self.notify_entity
+            updated = False
+            for acc in cfg.get('monitor_accounts', []):
+                if acc.get('phone') == self.phone or acc.get('name') == self.account_name:
+                    if acc.get('username') != username:
+                        acc['username'] = username
+                        updated = True
+                    break
 
+            if updated:
+                with open(self.config_file, 'w', encoding='utf-8') as f:
+                    yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False)
+                self.logger.info(f"[{self.account_name}] 已保存 username @{username} 到配置文件")
         except Exception as e:
-            self.logger.error(f"{tag} 获取通知目标失败: {e}")
-            raise
+            self.logger.warning(f"[{self.account_name}] 保存 username 到配置失败: {e}")
+
+    async def _get_notify_entity(self):
+        """获取所有通知目标实体"""
+        tag = f"[{self.account_name}]"
+        self.logger.info(f"{tag} 正在获取通知目标（共 {len(self.notify_targets)} 个）...")
+
+        self.notify_entities = []
+        for i, target in enumerate(self.notify_targets):
+            try:
+                if 'username' in target:
+                    username = target['username']
+                    entity = await self.client.get_entity(username)
+                    self.notify_entities.append(entity)
+                    self.logger.info(f"{tag} 通知目标 {i+1}: {username}")
+                elif 'user_id' in target:
+                    user_id = target['user_id']
+                    entity = await self.client.get_entity(user_id)
+                    self.notify_entities.append(entity)
+                    self.logger.info(f"{tag} 通知目标 {i+1} ID: {user_id}")
+                else:
+                    self.logger.warning(f"{tag} 通知目标 {i+1} 配置无效，跳过")
+            except Exception as e:
+                self.logger.error(f"{tag} 获取通知目标 {i+1} 失败: {e}")
+
+        if not self.notify_entities:
+            raise ValueError("没有可用的通知目标")
+
+        self.logger.info(f"{tag} 成功解析 {len(self.notify_entities)} 个通知目标")
+        # 设置红包处理器的通知实体
+        self.red_packet_handler.notify_entities = self.notify_entities
 
     def _register_handlers(self):
         """注册消息事件处理器"""
@@ -468,29 +537,33 @@ class TelegramMonitor:
                 link=message_link
             )
 
-            # 发送消息（带重试）
-            for attempt in range(self.retry_count):
-                try:
-                    await self.client.send_message(
-                        self.notify_entity,
-                        notification_text
-                    )
-                    self.logger.info(f"通知已发送到账号A")
-                    break
-                except Exception as e:
-                    if attempt < self.retry_count - 1:
-                        self.logger.warning(f"发送失败，{self.retry_delay}秒后重试... ({attempt + 1}/{self.retry_count})")
-                        await asyncio.sleep(self.retry_delay)
-                    else:
-                        raise
+            # 发送消息给所有通知目标（带重试）
+            for entity in self.notify_entities:
+                for attempt in range(self.retry_count):
+                    try:
+                        await self.client.send_message(
+                            entity,
+                            notification_text
+                        )
+                        self.logger.info(f"通知已发送")
+                        break
+                    except Exception as e:
+                        if attempt < self.retry_count - 1:
+                            self.logger.warning(f"发送失败，{self.retry_delay}秒后重试... ({attempt + 1}/{self.retry_count})")
+                            await asyncio.sleep(self.retry_delay)
+                        else:
+                            self.logger.error(f"发送通知失败: {e}")
 
-            # 如果配置了转发原始消息
-            if self.notification_config.get('forward_original', False):
-                await self.client.forward_messages(
-                    self.notify_entity,
-                    message
-                )
-                self.logger.info("原始消息已转发")
+                # 如果配置了转发原始消息
+                if self.notification_config.get('forward_original', False):
+                    try:
+                        await self.client.forward_messages(
+                            entity,
+                            message
+                        )
+                        self.logger.info("原始消息已转发")
+                    except Exception as e:
+                        self.logger.error(f"转发原始消息失败: {e}")
 
         except Exception as e:
             self.logger.error(f"发送通知失败: {e}", exc_info=True)

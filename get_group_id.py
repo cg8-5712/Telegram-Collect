@@ -25,11 +25,34 @@ async def main():
         print("正在加载配置文件...")
         config = load_config("config.yaml")
 
-        monitor_account = config['monitor_account']
-        api_id = monitor_account['api_id']
-        api_hash = monitor_account['api_hash']
-        session_file = monitor_account.get('session_file', 'sessions/monitor.session')
+        # 兼容新旧配置格式
+        if 'monitor_accounts' in config:
+            accounts = config['monitor_accounts']
+            enabled = [a for a in accounts if a.get('enabled', True)]
+            if not enabled:
+                print("❌ 没有启用的账号")
+                return
+            # 如果有多个账号，让用户选择
+            if len(enabled) > 1:
+                print("可用账号：")
+                for i, acc in enumerate(enabled):
+                    print(f"  [{i+1}] {acc.get('name', acc['phone'])} ({acc['phone']})")
+                choice = input(f"选择账号 [1-{len(enabled)}]（默认1）: ").strip()
+                idx = int(choice) - 1 if choice else 0
+                account = enabled[idx]
+            else:
+                account = enabled[0]
+        elif 'monitor_account' in config:
+            account = config['monitor_account']
+        else:
+            print("❌ 配置文件中未找到 monitor_accounts 或 monitor_account")
+            return
 
+        api_id = account['api_id']
+        api_hash = account['api_hash']
+        session_file = account.get('session_file', 'sessions/monitor.session')
+
+        print(f"使用账号: {account.get('name', account['phone'])}")
         print(f"使用 session: {session_file}")
         print()
         print("正在连接 Telegram...")

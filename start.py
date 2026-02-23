@@ -26,22 +26,40 @@ def run_web_in_thread():
 
 
 async def run_single_monitor(config, account, stats_db, logger):
-    """运行单个账号的监控服务"""
+    """运行单个账号的监控服务（带自动重连）"""
     name = account.get('name', account['phone'])
-    try:
-        monitor = TelegramMonitor(
-            config=config,
-            account=account,
-            config_file="config.yaml",
-            stats_db=stats_db,
-        )
-        logger.info(f"[{name}] 启动监控服务...")
-        await monitor.start()
-    except Exception as e:
-        logger.error(f"[{name}] 监控异常退出: {e}", exc_info=True)
-        # 标记为离线
-        if name in monitor_registry:
-            monitor_registry[name]['online'] = False
+    system_config = config.get('system', {})
+    max_retries = system_config.get('max_reconnect_retries', 0)  # 0 = 无限重试
+    reconnect_delay = system_config.get('reconnect_delay', 30)
+    auto_reconnect = system_config.get('auto_reconnect', True)
+    attempt = 0
+
+    while True:
+        attempt += 1
+        try:
+            monitor = TelegramMonitor(
+                config=config,
+                account=account,
+                config_file="config.yaml",
+                stats_db=stats_db,
+            )
+            logger.info(f"[{name}] 启动监控服务..." + (f" (第{attempt}次)" if attempt > 1 else ""))
+            await monitor.start()
+        except Exception as e:
+            logger.error(f"[{name}] 监控异常退出: {e}", exc_info=True)
+            if name in monitor_registry:
+                monitor_registry[name]['online'] = False
+
+        # 是否自动重连
+        if not auto_reconnect:
+            logger.info(f"[{name}] 自动重连已禁用，退出")
+            break
+        if max_retries > 0 and attempt >= max_retries:
+            logger.error(f"[{name}] 已达最大重连次数 {max_retries}，退出")
+            break
+
+        logger.warning(f"[{name}] {reconnect_delay}秒后自动重连...")
+        await asyncio.sleep(reconnect_delay)
 
 
 async def run_monitors():

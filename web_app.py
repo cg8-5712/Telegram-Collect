@@ -29,6 +29,15 @@ logger = logging.getLogger("WebApp")
 # 配置文件路径
 CONFIG_FILE = "config.yaml"
 
+
+def _parse_proxy_string(proxy_str):
+    """将代理字符串 (如 socks5://host:port) 解析为 dict"""
+    import re
+    m = re.match(r'^(socks5|socks4|http)://([^:]+):(\d+)$', proxy_str)
+    if m:
+        return {'enabled': True, 'type': m.group(1), 'host': m.group(2), 'port': int(m.group(3))}
+    return {}
+
 # 初始化统计数据库
 stats_db = StatisticsDB()
 
@@ -76,9 +85,11 @@ def login():
         username = data.get('username')
         password = data.get('password')
 
-        # 简单的认证（实际应该使用数据库存储用户信息）
+        # 简单的认证（支持环境变量配置）
         # 默认用户名: admin, 密码: admin123
-        if username == 'admin' and password == 'admin123':
+        admin_user = os.environ.get('ADMIN_USER', 'admin')
+        admin_pass = os.environ.get('ADMIN_PASS', 'admin123')
+        if username == admin_user and password == admin_pass:
             # 生成 JWT token
             token = jwt.encode({
                 'username': username,
@@ -314,6 +325,23 @@ def get_accounts(current_user):
         for acc in accounts:
             name = acc.get('name', acc.get('phone', ''))
             registry_info = monitor_registry.get(name, {})
+            # 优先取运行时实时值，回退取 config 中存储的 username
+            username = registry_info.get('username') or acc.get('username', '')
+            proxy_raw = acc.get('proxy', {})
+            # proxy 可能是字符串(旧格式)或dict，统一处理
+            if isinstance(proxy_raw, str):
+                proxy_str = proxy_raw
+                proxy_cfg = _parse_proxy_string(proxy_raw)
+            elif isinstance(proxy_raw, dict):
+                proxy_cfg = proxy_raw
+                proxy_str = ''
+                if proxy_cfg and proxy_cfg.get('enabled', True) and proxy_cfg.get('host'):
+                    proxy_str = f"{proxy_cfg.get('type','socks5')}://{proxy_cfg['host']}:{proxy_cfg.get('port',7890)}"
+            else:
+                proxy_cfg = {}
+                proxy_str = ''
+            # 运行时的代理信息覆盖
+            runtime_proxy = registry_info.get('proxy')
             result.append({
                 'name': name,
                 'phone': acc.get('phone', ''),
@@ -321,8 +349,11 @@ def get_accounts(current_user):
                 'session_file': acc.get('session_file', ''),
                 'enabled': acc.get('enabled', True),
                 'online': registry_info.get('online', False),
-                'username': registry_info.get('username'),
+                'username': username,
                 'started_at': registry_info.get('started_at'),
+                'proxy': runtime_proxy or proxy_str,
+                'proxy_config': proxy_cfg if isinstance(proxy_cfg, dict) else {},  # 结构化代理配置供WebUI编辑
+                'region': acc.get('region', ''),  # 地区备注
             })
 
         return jsonify({'success': True, 'data': result})
@@ -353,6 +384,16 @@ def update_accounts(current_user):
             name = acc.get('name', acc.get('phone', ''))
             if acc.get('api_hash') in (None, '', '***') and name in old_accounts:
                 acc['api_hash'] = old_accounts[name].get('api_hash', '')
+
+        # 清理前端传回的运行时字段，只保留配置字段
+        runtime_fields = ('online', 'started_at', 'proxy_config')
+        for acc in new_accounts:
+            for field in runtime_fields:
+                acc.pop(field, None)
+            # 如果 proxy 是空dict或 enabled=false，移除
+            proxy = acc.get('proxy')
+            if isinstance(proxy, dict) and (not proxy or not proxy.get('enabled', True) or not proxy.get('host')):
+                acc.pop('proxy', None)
 
         config['monitor_accounts'] = new_accounts
         # 如果存在旧格式，清除

@@ -1,6 +1,9 @@
 # Telegram 客户端库
 telethon==1.34.0
 
+# SOCKS/HTTP 代理支持（每个账号走不同IP）
+pysocks==1.7.1
+
 # 配置文件解析
 pyyaml==6.0.1
 

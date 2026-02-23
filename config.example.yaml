@@ -9,20 +9,51 @@ monitor_accounts:
     api_hash: "YOUR_API_HASH"          # 从 https://my.telegram.org 获取
     session_file: "sessions/monitor-138xxxxxxxx.session"
     enabled: true                       # 是否启用
+    region: "香港"                      # 地区备注（显示用，实际地区由Clash节点决定）
+    # 代理配置
+    # Docker 部署: host 填 clash（容器名），对应 clash/config.yaml 中的 listeners 端口
+    # 本地部署: host 填 127.0.0.1
+    # 也支持简写: proxy: socks5://clash:7892
+    proxy:
+      enabled: true
+      type: socks5
+      host: "clash"            # Docker 内直接用容器名
+      port: 7892               # 对应 Clash 中 "🇭🇰 香港" 的监听端口
 
-  # 可以添加更多账号
-  # - name: "小号"
+  # ===== 多账号+多地区 示例 =====
+  # Clash 的 listeners 配置了不同端口绑定不同地区:
+  #   端口 7891 → 🚀 节点选择（手动切换）
+  #   端口 7892 → 🇭🇰 香港
+  #   端口 7893 → 🇯🇵 日本
+  #   端口 7894 → 🇺🇸 美国
+  #   端口 7895 → 🇸🇬 新加坡
+  #   端口 7896 → 🇹🇼 台湾
+  #
+  # 每个账号指向不同端口即可切换地区:
+
+  # - name: "小号-日本"
   #   phone: "+86139xxxxxxxx"
   #   api_id: "YOUR_API_ID2"
   #   api_hash: "YOUR_API_HASH2"
   #   session_file: "sessions/monitor-139xxxxxxxx.session"
   #   enabled: true
+  #   region: "日本"
+  #   proxy: socks5://clash:7893
 
-# 账号A - 通知接收账号（无需登录）
-notify_target:
-  username: "@your_username"  # 账号A的用户名（以@开头）
-  # 或者使用 user_id（二选一）
-  # user_id: 123456789
+  # - name: "小号-美国"
+  #   phone: "+86137xxxxxxxx"
+  #   api_id: "YOUR_API_ID3"
+  #   api_hash: "YOUR_API_HASH3"
+  #   session_file: "sessions/monitor-137xxxxxxxx.session"
+  #   enabled: true
+  #   region: "美国"
+  #   proxy: socks5://clash:7894
+
+# 通知接收人（支持多人，每人一条）
+notify_targets:
+  - username: "@your_username"      # 用户名方式（以@开头）
+  # - username: "@another_person"   # 多个通知人
+  # - user_id: 123456789            # 也可以用 user_id
 
 # 监控群组列表
 # 使用 get_group_id.py 脚本获取群组ID

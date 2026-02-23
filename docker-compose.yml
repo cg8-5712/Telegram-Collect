@@ -1,22 +1,53 @@
 version: '3.8'
 
 services:
-  # Telegram 监控系统（监控服务 + Web 管理界面）
+  # ==================== Clash 代理 ====================
+  clash:
+    image: metacubex/mihomo:latest
+    container_name: tg-clash
+    restart: unless-stopped
+    volumes:
+      # Clash 配置文件（必须提前准备好）
+      - ./clash/config.yaml:/root/.config/mihomo/config.yaml
+      # 订阅缓存等数据
+      - ./clash/data:/root/.config/mihomo
+    ports:
+      # Clash 管理面板（可选，用于在浏览器管理节点）
+      - "9090:9090"
+      # 如果需要从宿主机也使用此代理，取消下面的注释
+      # - "7890:7890"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:9090"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ==================== 监控主服务 ====================
   tg-monitor:
     build: .
     container_name: tg-monitor
     restart: unless-stopped
+    depends_on:
+      clash:
+        condition: service_started
     ports:
       - "5000:5000"
     volumes:
+      # 配置文件（必须提前准备好）
       - ./config.yaml:/app/config.yaml
+      # Session 持久化（登录后的会话文件）
       - ./sessions:/app/sessions
+      # 数据库持久化（统计数据）
       - ./data:/app/data
+      # 日志持久化
       - ./logs:/app/logs
     environment:
       - TZ=Asia/Shanghai
-      - SECRET_KEY=${SECRET_KEY:-change-this-to-a-random-secret-key}
+      # WebUI 登录密钥（建议修改）
+      - SECRET_KEY=${SECRET_KEY:-please-change-this-secret-key}
+      # WebUI 管理员账号（可选，默认 admin/admin123）
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-admin123}
     stdin_open: true
     tty: true
-    command: python start.py
 
