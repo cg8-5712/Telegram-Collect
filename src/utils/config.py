@@ -38,7 +38,6 @@ def _validate_config(config: Dict[str, Any]) -> None:
         config: 配置字典
     """
     required_keys = [
-        'monitor_account',
         'notify_target',
         'monitor_groups',
         'keywords'
@@ -48,14 +47,29 @@ def _validate_config(config: Dict[str, Any]) -> None:
         if key not in config:
             raise ValueError(f"配置文件缺少必需项: {key}")
 
-    # 验证账号B配置
-    monitor_account = config['monitor_account']
-    if 'phone' not in monitor_account:
-        raise ValueError("monitor_account 缺少 phone 配置")
-    if 'api_id' not in monitor_account:
-        raise ValueError("monitor_account 缺少 api_id 配置")
-    if 'api_hash' not in monitor_account:
-        raise ValueError("monitor_account 缺少 api_hash 配置")
+    # 验证监控账号配置（兼容新旧格式）
+    if 'monitor_accounts' in config:
+        accounts = config['monitor_accounts']
+        if not isinstance(accounts, list) or len(accounts) == 0:
+            raise ValueError("monitor_accounts 必须是非空列表")
+        for i, acc in enumerate(accounts):
+            name = acc.get('name', f'账号{i+1}')
+            if 'phone' not in acc:
+                raise ValueError(f"monitor_accounts[{name}] 缺少 phone 配置")
+            if 'api_id' not in acc:
+                raise ValueError(f"monitor_accounts[{name}] 缺少 api_id 配置")
+            if 'api_hash' not in acc:
+                raise ValueError(f"monitor_accounts[{name}] 缺少 api_hash 配置")
+    elif 'monitor_account' in config:
+        monitor_account = config['monitor_account']
+        if 'phone' not in monitor_account:
+            raise ValueError("monitor_account 缺少 phone 配置")
+        if 'api_id' not in monitor_account:
+            raise ValueError("monitor_account 缺少 api_id 配置")
+        if 'api_hash' not in monitor_account:
+            raise ValueError("monitor_account 缺少 api_hash 配置")
+    else:
+        raise ValueError("配置文件缺少必需项: monitor_accounts 或 monitor_account")
 
     # 验证账号A配置
     notify_target = config['notify_target']
