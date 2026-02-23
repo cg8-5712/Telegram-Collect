@@ -38,7 +38,6 @@ def _validate_config(config: Dict[str, Any]) -> None:
         config: 配置字典
     """
     required_keys = [
-        'notify_targets',
         'monitor_groups',
         'keywords'
     ]
@@ -46,6 +45,21 @@ def _validate_config(config: Dict[str, Any]) -> None:
     for key in required_keys:
         if key not in config:
             raise ValueError(f"配置文件缺少必需项: {key}")
+
+    # 验证通知目标（兼容新旧格式）
+    if 'notify_targets' in config:
+        notify_targets = config['notify_targets']
+        if not isinstance(notify_targets, list):
+            raise ValueError("notify_targets 必须是列表格式")
+        for i, target in enumerate(notify_targets):
+            if 'username' not in target and 'user_id' not in target:
+                raise ValueError(f"notify_targets[{i}] 必须配置 username 或 user_id")
+    elif 'notify_target' in config:
+        target = config['notify_target']
+        if 'username' not in target and 'user_id' not in target:
+            raise ValueError("notify_target 必须配置 username 或 user_id")
+    else:
+        raise ValueError("配置文件缺少必需项: notify_targets 或 notify_target")
 
     # 验证监控账号配置（兼容新旧格式）
     if 'monitor_accounts' in config:
@@ -70,14 +84,6 @@ def _validate_config(config: Dict[str, Any]) -> None:
             raise ValueError("monitor_account 缺少 api_hash 配置")
     else:
         raise ValueError("配置文件缺少必需项: monitor_accounts 或 monitor_account")
-
-    # 验证账号A配置
-    notify_targets = config['notify_targets']
-    if not isinstance(notify_targets, list):
-        raise ValueError("notify_targets 必须是列表格式")
-    for i, target in enumerate(notify_targets):
-        if 'username' not in target and 'user_id' not in target:
-            raise ValueError(f"notify_targets[{i}] 必须配置 username 或 user_id")
 
     # 验证群组配置
     if not config['monitor_groups']:

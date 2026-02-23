@@ -152,6 +152,8 @@ def update_config(current_user):
             config['monitor_groups'] = data['monitor_groups']
         if 'notification' in data:
             config['notification'] = data['notification']
+        if 'notify_targets' in data:
+            config['notify_targets'] = data['notify_targets']
         if 'red_packet' in data:
             config['red_packet'] = data['red_packet']
 

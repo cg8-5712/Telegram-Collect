@@ -815,8 +815,20 @@
             <!-- 系统配置 -->
             <div class="tab-content" id="config-tab">
                 <h3>系统配置</h3>
+
+                <!-- 通知人管理 -->
+                <h4 style="margin-top:0;">🔔 通知接收人</h4>
+                <p style="color:#666;font-size:13px;margin-bottom:10px;">关键词提醒和红包通知会发送给以下所有人，支持 @用户名 或 数字ID</p>
+                <div id="notifyTargetsList"></div>
+                <div style="display:flex;gap:10px;margin-top:10px;margin-bottom:20px;">
+                    <input type="text" id="newNotifyTarget" placeholder="输入 @username 或 user_id" style="flex:1;">
+                    <button class="btn btn-save" onclick="addNotifyTarget()">➕ 添加</button>
+                </div>
+
+                <hr style="margin:20px 0;">
+                <h4>📨 通知格式</h4>
                 <div class="form-group">
-                    <label>通知消息格式</label>
+                    <label>通知消息模板</label>
                     <textarea id="notificationFormat"></textarea>
                 </div>
                 <div class="form-group">
@@ -1069,9 +1081,83 @@
                     document.getElementById('notificationFormat').value = notification.format || '';
                     document.getElementById('includeLink').checked = notification.include_link !== false;
                     document.getElementById('forwardOriginal').checked = notification.forward_original === true;
+
+                    // 加载通知人列表
+                    const targets = config.notify_targets || config.notify_target ? [config.notify_target] : [];
+                    renderNotifyTargets(Array.isArray(targets) ? targets : [targets]);
                 }
             } catch (error) {
                 console.error('加载配置失败:', error);
+            }
+        }
+
+        let cachedNotifyTargets = [];
+
+        function renderNotifyTargets(targets) {
+            cachedNotifyTargets = targets;
+            const container = document.getElementById('notifyTargetsList');
+            container.innerHTML = '';
+            targets.forEach((target, index) => {
+                const display = target.username || target.user_id || '';
+                const type = target.username ? '@用户名' : 'User ID';
+                const item = document.createElement('div');
+                item.className = 'list-item';
+                item.innerHTML = `
+                    <div class="list-item-content">
+                        <strong>${display}</strong>
+                        <small style="color:#888;margin-left:8px;">(${type})</small>
+                    </div>
+                    <div class="list-item-actions">
+                        <button class="btn btn-small btn-danger" onclick="removeNotifyTarget(${index})">🗑️</button>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+            if (targets.length === 0) {
+                container.innerHTML = '<p style="color:#999;font-size:13px;">暂无通知人，请添加</p>';
+            }
+        }
+
+        function addNotifyTarget() {
+            const input = document.getElementById('newNotifyTarget').value.trim();
+            if (!input) return;
+            let target;
+            if (input.startsWith('@')) {
+                target = { username: input };
+            } else if (/^\d+$/.test(input)) {
+                target = { user_id: parseInt(input) };
+            } else {
+                // 假定是 username，自动加 @
+                target = { username: '@' + input };
+            }
+            cachedNotifyTargets.push(target);
+            renderNotifyTargets(cachedNotifyTargets);
+            document.getElementById('newNotifyTarget').value = '';
+            // 立即保存
+            saveNotifyTargets();
+        }
+
+        function removeNotifyTarget(index) {
+            cachedNotifyTargets.splice(index, 1);
+            renderNotifyTargets(cachedNotifyTargets);
+            saveNotifyTargets();
+        }
+
+        async function saveNotifyTargets() {
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ notify_targets: cachedNotifyTargets })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    showMessage('通知人已更新', 'success');
+                } else {
+                    showMessage('保存失败: ' + data.message, 'error');
+                }
+            } catch (error) {
+                showMessage('保存失败: ' + error.message, 'error');
             }
         }
 
