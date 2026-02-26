@@ -417,7 +417,7 @@ class StatisticsDB:
             ]
         }
 
-    def get_red_packet_history(self, limit=50, offset=0, group_id=None, start_date=None, end_date=None):
+    def get_red_packet_history(self, limit=50, offset=0, group_id=None, start_date=None, end_date=None, account_names=None):
         """获取红包领取历史"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -434,6 +434,10 @@ class StatisticsDB:
         if end_date:
             query += " AND created_at <= ?"
             params.append(end_date)
+        if account_names:
+            placeholders = ','.join('?' * len(account_names))
+            query += f" AND account_name IN ({placeholders})"
+            params.extend(account_names)
 
         # 总数
         count_query = query.replace("SELECT *", "SELECT COUNT(*)")

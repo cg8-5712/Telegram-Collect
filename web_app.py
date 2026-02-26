@@ -611,12 +611,19 @@ def get_red_packet_history(current_user):
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
 
+        # 获取账号筛选参数
+        accounts_param = request.args.get('accounts')
+        account_names = None
+        if accounts_param and accounts_param != 'all':
+            account_names = [name.strip() for name in accounts_param.split(',') if name.strip()]
+
         result = stats_db.get_red_packet_history(
             limit=limit,
             offset=offset,
             group_id=group_id,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            account_names=account_names
         )
         return jsonify({'success': True, 'data': result})
     except Exception as e:

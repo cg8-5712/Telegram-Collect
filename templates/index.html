@@ -713,10 +713,20 @@
 
                 <!-- 红包领取历史 -->
                 <h4 style="margin-bottom:10px;">📜 领取历史</h4>
+
+                <!-- 账号筛选 -->
+                <div style="margin-bottom:15px;">
+                    <label style="font-weight:500;margin-right:10px;">账号筛选：</label>
+                    <div id="accountFilterContainer" style="display:inline-block;">
+                        <label style="margin-right:15px;"><input type="checkbox" value="all" checked onchange="toggleAllAccounts(this)"> 全部</label>
+                    </div>
+                </div>
+
                 <table class="history-table">
                     <thead>
                         <tr>
                             <th>时间</th>
+                            <th>账号</th>
                             <th>群组</th>
                             <th>题目</th>
                             <th>答案</th>
@@ -726,7 +736,7 @@
                         </tr>
                     </thead>
                     <tbody id="rpHistoryBody">
-                        <tr><td colspan="7" style="text-align:center;color:#999;">暂无数据</td></tr>
+                        <tr><td colspan="8" style="text-align:center;color:#999;">暂无数据</td></tr>
                     </tbody>
                 </table>
                 <div class="pagination">
@@ -1603,24 +1613,34 @@
         }
 
         // 加载红包历史
+        let selectedAccounts = ['all']; // 默认选中全部
+
         async function loadRpHistory(page) {
             if (page < 1) return;
             rpHistoryPage = page;
 
             try {
                 const offset = (page - 1) * rpHistoryPageSize;
-                const response = await fetch(`/api/red_packet/history?limit=${rpHistoryPageSize}&offset=${offset}`);
+
+                // 构建账号筛选参数
+                let accountParam = '';
+                if (!selectedAccounts.includes('all') && selectedAccounts.length > 0) {
+                    accountParam = '&accounts=' + selectedAccounts.join(',');
+                }
+
+                const response = await fetch(`/api/red_packet/history?limit=${rpHistoryPageSize}&offset=${offset}${accountParam}`);
                 const data = await response.json();
                 if (data.success) {
                     const { total, records } = data.data;
                     const tbody = document.getElementById('rpHistoryBody');
 
                     if (records.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;">暂无数据</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;">暂无数据</td></tr>';
                     } else {
                         tbody.innerHTML = records.map(r => `
                             <tr>
                                 <td>${r.created_at || '--'}</td>
+                                <td>${r.account_name || '未知'}</td>
                                 <td>${r.group_name || '--'}</td>
                                 <td>${r.expression || '--'}</td>
                                 <td>${r.answer != null ? r.answer : '--'}</td>
@@ -1641,6 +1661,70 @@
             }
         }
 
+        // 加载账号列表并生成筛选器
+        async function loadAccountFilters() {
+            try {
+                const response = await fetch('/api/accounts');
+                const data = await response.json();
+                if (data.success && data.data) {
+                    const container = document.getElementById('accountFilterContainer');
+                    const allCheckbox = container.querySelector('input[value="all"]');
+
+                    // 添加账号选项
+                    data.data.forEach(account => {
+                        const label = document.createElement('label');
+                        label.style.marginRight = '15px';
+                        label.innerHTML = `<input type="checkbox" value="${account.name}" onchange="updateAccountFilter(this)"> ${account.name}`;
+                        container.appendChild(label);
+                    });
+                }
+            } catch (error) {
+                console.error('加载账号筛选失败:', error);
+            }
+        }
+
+        // 切换全部账号
+        function toggleAllAccounts(checkbox) {
+            const container = document.getElementById('accountFilterContainer');
+            const checkboxes = container.querySelectorAll('input[type="checkbox"]:not([value="all"])');
+
+            if (checkbox.checked) {
+                selectedAccounts = ['all'];
+                checkboxes.forEach(cb => cb.checked = false);
+            } else {
+                selectedAccounts = [];
+            }
+
+            loadRpHistory(1);
+        }
+
+        // 更新账号筛选
+        function updateAccountFilter(checkbox) {
+            const allCheckbox = document.querySelector('input[value="all"]');
+
+            if (checkbox.checked) {
+                // 取消"全部"选项
+                allCheckbox.checked = false;
+                selectedAccounts = selectedAccounts.filter(a => a !== 'all');
+
+                // 添加当前账号
+                if (!selectedAccounts.includes(checkbox.value)) {
+                    selectedAccounts.push(checkbox.value);
+                }
+            } else {
+                // 移除当前账号
+                selectedAccounts = selectedAccounts.filter(a => a !== checkbox.value);
+
+                // 如果没有选中任何账号，自动选中"全部"
+                if (selectedAccounts.length === 0) {
+                    allCheckbox.checked = true;
+                    selectedAccounts = ['all'];
+                }
+            }
+
+            loadRpHistory(1);
+        }
+
         // 页面加载时初始化
         window.onload = function() {
             refreshStatus();
@@ -1651,6 +1735,7 @@
             loadRedPacketConfig();
             loadRedPacketStats();
             loadRedPacketCalendar();
+            loadAccountFilters(); // 加载账号筛选器
             loadRpHistory(1);
 
             // 每30秒自动刷新状态和账号
