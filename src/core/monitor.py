@@ -228,14 +228,28 @@ class TelegramMonitor:
             # 发送验证码
             await self.client.send_code_request(self.phone)
 
-            # 等待用户输入验证码
-            code = input(f"{tag} 请输入验证码（发送到 Telegram App）: ")
+            # 等待用户输入验证码（用 asyncio 避免多账号并发时 input 冲突）
+            code = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: input(f"{tag} 请输入验证码（发送到 Telegram App）: ")
+            )
+            code = code.strip()
+            self.logger.info(f"{tag} 收到验证码输入，长度={len(code)}")
             try:
                 await self.client.sign_in(self.phone, code)
             except SessionPasswordNeededError:
                 # 需要两步验证密码
-                password = input(f"{tag} 请输入两步验证密码: ")
-                await self.client.sign_in(password=password)
+                self.logger.info(f"{tag} 需要两步验证密码...")
+                password = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: input(f"{tag} 请输入两步验证密码: ")
+                )
+                password = password.strip()
+                self.logger.info(f"{tag} 收到2FA密码输入，长度={len(password)}, 首字符='{password[0] if password else '空'}'")
+                try:
+                    await self.client.sign_in(password=password)
+                except Exception as e2fa:
+                    self.logger.error(f"{tag} 2FA登录失败: {e2fa}")
+                    self.logger.error(f"{tag} 密码长度={len(password)}, repr={repr(password)}")
+                    raise
 
             self.logger.info(f"{tag} 登录成功！")
         else:

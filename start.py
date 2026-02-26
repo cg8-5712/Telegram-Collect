@@ -62,6 +62,49 @@ async def run_single_monitor(config, account, stats_db, logger):
         await asyncio.sleep(reconnect_delay)
 
 
+def run_database_migration():
+    """执行数据库迁移"""
+    import sqlite3
+    db_path = "data/statistics.db"
+
+    if not Path(db_path).exists():
+        return  # 数据库不存在，无需迁移
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        # 检查 account_name 列是否已存在
+        cursor.execute("PRAGMA table_info(red_packet_records)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if 'account_name' in columns:
+            conn.close()
+            return  # 已迁移
+
+        print("检测到数据库需要迁移，正在添加 account_name 字段...")
+
+        # 读取配置获取第一个账号名称
+        try:
+            config = load_config("config.yaml")
+            if 'monitor_accounts' in config and config['monitor_accounts']:
+                first_account = config['monitor_accounts'][0].get('name', '主账号')
+            else:
+                first_account = '主账号'
+        except:
+            first_account = '主账号'
+
+        # 添加列并更新现有数据
+        cursor.execute("ALTER TABLE red_packet_records ADD COLUMN account_name TEXT")
+        cursor.execute("UPDATE red_packet_records SET account_name = ? WHERE account_name IS NULL", (first_account,))
+
+        conn.commit()
+        conn.close()
+        print(f"✓ 数据库迁移完成，历史记录已归属到账号: {first_account}")
+    except Exception as e:
+        print(f"数据库迁移失败: {e}")
+
+
 async def run_monitors():
     """运行所有账号的监控服务"""
     logger = logging.getLogger("TelegramMonitor")
@@ -114,11 +157,34 @@ async def run_monitors():
         # 共享统计数据库
         stats_db = StatisticsDB()
 
-        # 并发启动所有账号
+        # === 先顺序登录所有账号（避免多个 input 抢 stdin）===
+        from src.core.monitor import TelegramMonitor
+        for account in enabled_accounts:
+            name = account.get('name', account['phone'])
+            logger.info(f"预登录账号: {name} ({account['phone']})")
+            try:
+                pre_monitor = TelegramMonitor(
+                    config=config,
+                    account=account,
+                    config_file="config.yaml",
+                    stats_db=stats_db,
+                )
+                await pre_monitor.client.connect()
+                if not await pre_monitor.client.is_user_authorized():
+                    logger.info(f"[{name}] 需要登录，进入交互流程...")
+                    await pre_monitor._connect_and_login()
+                else:
+                    logger.info(f"[{name}] 已有有效 session，跳过登录")
+                await pre_monitor.client.disconnect()
+            except Exception as e:
+                logger.error(f"[{name}] 预登录失败: {e}")
+                logger.warning(f"[{name}] 将在监控启动时重试登录")
+
+        # === 登录完成后，并发启动所有账号监控 ===
         tasks = []
         for account in enabled_accounts:
             name = account.get('name', account['phone'])
-            logger.info(f"初始化账号: {name} ({account['phone']})")
+            logger.info(f"启动监控: {name} ({account['phone']})")
             task = asyncio.create_task(
                 run_single_monitor(config, account, stats_db, logger)
             )
@@ -146,6 +212,10 @@ def main():
     print("Telegram 监控系统 - 多账号统一启动")
     print("=" * 60)
     print()
+
+    # 执行数据库迁移（如果需要）
+    run_database_migration()
+
     print("启动服务:")
     print("  - Web 管理界面: http://0.0.0.0:5000")
     print("  - Telegram 多账号监控服务")

@@ -272,7 +272,8 @@ class RedPacketHandler:
                     total_count=data.get('total_count'),
                     expression=data.get('expression'),
                     answer=answer,
-                    success=False, error_message="未找到匹配按钮"
+                    success=False, error_message="未找到匹配按钮",
+                    account_name=self.account_name
                 )
             await self._send_notify(
                 f"⚠️ 红包处理失败\n"
@@ -306,7 +307,8 @@ class RedPacketHandler:
                     answer=answer,
                     clicked_button=answer_button.text,
                     delay_seconds=delay,
-                    success=False, error_message=str(e)
+                    success=False, error_message=str(e),
+                    account_name=self.account_name
                 )
             await self._send_notify(
                 f"❌ 红包按钮点击失败\n"
@@ -340,7 +342,8 @@ class RedPacketHandler:
                 answer=answer,
                 clicked_button=answer_button.text,
                 delay_seconds=delay,
-                success=True
+                success=True,
+                account_name=self.account_name
             )
             # 如果已获取到领取金额，立即更新记录
             if amount_received is not None and record_id:

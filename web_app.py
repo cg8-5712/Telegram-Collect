@@ -640,6 +640,19 @@ def get_red_packet_calendar(current_user):
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
+@app.route('/api/red_packet/stats_by_account', methods=['GET'])
+@token_required
+def get_red_packet_stats_by_account(current_user):
+    """获取按账号分组的红包统计"""
+    try:
+        days = request.args.get('days', 7, type=int)
+        stats = stats_db.get_red_packet_stats_by_account(days=days)
+        return jsonify({'success': True, 'data': stats})
+    except Exception as e:
+        logger.error(f"获取账号红包统计失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 def run_web_app(host='0.0.0.0', port=5000, debug=False):
     """运行 Web 应用"""
     app.run(host=host, port=port, debug=debug)

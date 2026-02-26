@@ -2,7 +2,7 @@
 数据统计模块 - 数据库模型
 """
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -18,6 +18,20 @@ class StatisticsDB:
 
         # 初始化数据库
         self._init_db()
+
+    @staticmethod
+    def _utc_to_local(utc_time_str):
+        """将UTC时间字符串转换为东八区时间字符串"""
+        if not utc_time_str:
+            return None
+        try:
+            # 解析UTC时间
+            utc_dt = datetime.fromisoformat(utc_time_str.replace('Z', '+00:00'))
+            # 转换为东八区（UTC+8）
+            local_dt = utc_dt + timedelta(hours=8)
+            return local_dt.strftime('%Y-%m-%d %H:%M:%S')
+        except:
+            return utc_time_str
 
     def _init_db(self):
         """初始化数据库表"""
@@ -76,6 +90,7 @@ class StatisticsDB:
                 success INTEGER DEFAULT 0,
                 amount_received REAL,
                 error_message TEXT,
+                account_name TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -179,7 +194,7 @@ class StatisticsDB:
             {
                 'keyword': row[0],
                 'hit_count': row[1],
-                'last_hit_at': row[2]
+                'last_hit_at': self._utc_to_local(row[2])
             }
             for row in results
         ]
@@ -205,7 +220,7 @@ class StatisticsDB:
                 'group_name': row[1],
                 'message_count': row[2],
                 'keyword_hit_count': row[3],
-                'last_activity_at': row[4]
+                'last_activity_at': self._utc_to_local(row[4])
             }
             for row in results
         ]
@@ -276,7 +291,7 @@ class StatisticsDB:
                     'sender_id': row[4],
                     'sender_name': row[5],
                     'matched_keyword': row[6],
-                    'created_at': row[7]
+                    'created_at': self._utc_to_local(row[7])
                 }
                 for row in results
             ]
@@ -313,7 +328,7 @@ class StatisticsDB:
                 'sender_id': row[4],
                 'sender_name': row[5],
                 'matched_keyword': row[6],
-                'created_at': row[7]
+                'created_at': self._utc_to_local(row[7])
             }
             for row in results
         ]
@@ -322,7 +337,7 @@ class StatisticsDB:
 
     def record_red_packet(self, group_id, group_name, total_amount=None, total_count=None,
                           expression=None, answer=None, clicked_button=None, delay_seconds=None,
-                          success=False, amount_received=None, error_message=None):
+                          success=False, amount_received=None, error_message=None, account_name=None):
         """记录红包领取"""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -330,10 +345,10 @@ class StatisticsDB:
         cursor.execute("""
             INSERT INTO red_packet_records
             (group_id, group_name, total_amount, total_count, expression, answer,
-             clicked_button, delay_seconds, success, amount_received, error_message)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             clicked_button, delay_seconds, success, amount_received, error_message, account_name)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (group_id, group_name, total_amount, total_count, expression, answer,
-              clicked_button, delay_seconds, 1 if success else 0, amount_received, error_message))
+              clicked_button, delay_seconds, 1 if success else 0, amount_received, error_message, account_name))
 
         record_id = cursor.lastrowid
         conn.commit()
@@ -448,7 +463,8 @@ class StatisticsDB:
                     'success': bool(row[9]),
                     'amount_received': row[10],
                     'error_message': row[11],
-                    'created_at': row[12]
+                    'account_name': row[12],
+                    'created_at': self._utc_to_local(row[13])
                 }
                 for row in results
             ]
@@ -498,3 +514,34 @@ class StatisticsDB:
             }
 
         return calendar_data
+
+    def get_red_packet_stats_by_account(self, days=7):
+        """获取按账号分组的红包统计"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+
+        cursor.execute("""
+            SELECT
+                COALESCE(account_name, '未知账号') as account,
+                COUNT(*) as total_attempts,
+                SUM(CASE WHEN success=1 THEN 1 ELSE 0 END) as success_count,
+                SUM(CASE WHEN success=1 THEN amount_received ELSE 0 END) as total_received
+            FROM red_packet_records
+            WHERE created_at >= datetime('now', '-' || ? || ' days')
+            GROUP BY account_name
+            ORDER BY total_received DESC
+        """, (days,))
+
+        results = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                'account_name': row[0],
+                'total_attempts': row[1],
+                'success_count': row[2] or 0,
+                'total_received': round(row[3], 2) if row[3] else 0,
+                'success_rate': round((row[2] or 0) / row[1] * 100, 1) if row[1] > 0 else 0
+            }
+            for row in results
+        ]
